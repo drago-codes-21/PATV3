@@ -1,3 +1,5 @@
+import pytest
+
 from pat.detectors.base import DetectorResult
 from pat.fusion import FusionEngine
 
@@ -76,3 +78,21 @@ def test_fusion_regression_sample_sentence():
     assert "EMAIL" in types
     # Ensure spans are not merged into a single oversized span
     assert max(span.end for span in fused) - min(span.start for span in fused) < len(text)
+
+
+def test_fusion_updates_max_confidence_and_merges_adjacent_numeric():
+    engine = FusionEngine()
+    # Adjacent numeric spans of same type should be merged safely.
+    first = DetectorResult(
+        start=0, end=4, text="1234", pii_type="BANK_ACCOUNT", confidence=0.6, detector_name="regex"
+    )
+    second = DetectorResult(
+        start=4, end=8, text="5678", pii_type="BANK_ACCOUNT", confidence=0.9, detector_name="domain_heuristic"
+    )
+    fused = engine.fuse([first, second], text="12345678")
+    assert len(fused) == 1
+    span = fused[0]
+    assert span.start == 0 and span.end == 8
+    assert span.max_confidence == pytest.approx(0.9)
+    # Aggregated confidence should account for multiple detectors (bonus applied)
+    assert span.confidence >= span.max_confidence

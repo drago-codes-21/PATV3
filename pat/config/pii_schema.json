@@ -2,7 +2,7 @@
   "categories": [
     {
       "id": "GOVERNMENT_ID",
-      "description": "Government-issued personal identifiers",
+      "description": "Government-issued identifiers",
       "pii_types": [
         "NI_NUMBER",
         "PASSPORT_NUMBER",
@@ -12,22 +12,31 @@
       ],
       "placeholder": "<GOV_ID>"
     },
+
     {
       "id": "CONTACT",
-      "description": "Direct contact information",
+      "description": "Direct communication channels",
       "pii_types": [
         "EMAIL",
         "PHONE",
-        "ADDRESS",
-        "POSTCODE",
-        "URL",
         "SOCIAL_HANDLE"
       ],
       "placeholder": "<CONTACT>"
     },
+
+    {
+      "id": "ADDRESS_LOCATION",
+      "description": "Home addresses, postal codes, and location descriptors",
+      "pii_types": [
+        "ADDRESS",
+        "POSTCODE"
+      ],
+      "placeholder": "<ADDRESS>"
+    },
+
     {
       "id": "FINANCIAL",
-      "description": "Financial accounts and payment instruments",
+      "description": "Financial accounts, payment instruments, and transaction IDs",
       "pii_types": [
         "BANK_ACCOUNT",
         "SORT_CODE",
@@ -38,20 +47,10 @@
       ],
       "placeholder": "<FINANCIAL>"
     },
-    {
-      "id": "BIOMETRIC",
-      "description": "Biometric references (textual)",
-      "pii_types": [
-        "BIOMETRIC_FACE",
-        "BIOMETRIC_FINGERPRINT",
-        "BIOMETRIC_VOICE",
-        "BIOMETRIC"
-      ],
-      "placeholder": "<BIOMETRIC>"
-    },
+
     {
       "id": "AUTHENTICATION",
-      "description": "Secrets and authentication material",
+      "description": "Secrets, tokens, and authentication material",
       "pii_types": [
         "CREDENTIAL",
         "PASSWORD",
@@ -62,9 +61,20 @@
       ],
       "placeholder": "<CREDENTIAL>"
     },
+
+    {
+      "id": "PERSON_IDENTITY",
+      "description": "Names identifying a specific person",
+      "pii_types": [
+        "PERSON",
+        "PERSON_NAME"
+      ],
+      "placeholder": "<PERSON>"
+    },
+
     {
       "id": "HEALTH",
-      "description": "Health or medical information",
+      "description": "Health, medical or diagnostic data",
       "pii_types": [
         "MEDICAL_INFO",
         "MEDICATION",
@@ -74,9 +84,10 @@
       ],
       "placeholder": "<MEDICAL_INFO>"
     },
+
     {
       "id": "ONLINE_DEVICE",
-      "description": "Online or device identifiers",
+      "description": "Device/network identifiers",
       "pii_types": [
         "IP_ADDRESS",
         "IPV6_ADDRESS",
@@ -87,9 +98,10 @@
       ],
       "placeholder": "<ONLINE_ID>"
     },
+
     {
       "id": "EMPLOYMENT_EDUCATION",
-      "description": "Employment and education details linked to a person",
+      "description": "Employment or education details tied to a person",
       "pii_types": [
         "EMPLOYER_NAME",
         "JOB_TITLE",
@@ -99,6 +111,7 @@
       ],
       "placeholder": "<EMPLOYMENT>"
     },
+
     {
       "id": "LOCATION_ACTIVITY",
       "description": "Location or activity traces",
@@ -109,103 +122,131 @@
         "ACTIVITY_PATTERN"
       ],
       "placeholder": "<LOCATION>"
+    },
+
+    {
+      "id": "URL_RESOURCE",
+      "description": "URLs and query-bearing online references",
+      "pii_types": [
+        "URL"
+      ],
+      "placeholder": "<URL>"
     }
   ],
+
   "type_priority": {
     "PASSWORD": 98,
     "TOKEN": 96,
     "API_KEY": 96,
-    "SESSION_ID": 94,
+    "SESSION_ID": 95,
     "PIN": 94,
+
     "CARD_NUMBER": 92,
     "IBAN": 91,
     "BANK_ACCOUNT": 90,
     "SORT_CODE": 89,
     "CUSTOMER_ID": 88,
     "TRANSACTION_ID": 87,
+
     "NI_NUMBER": 86,
     "DRIVING_LICENSE": 85,
     "PASSPORT_NUMBER": 85,
     "NHS_NUMBER": 85,
     "GOV_ID": 83,
-    "EMAIL": 80,
-    "PHONE": 79,
-    "ADDRESS": 78,
-    "POSTCODE": 77,
-    "URL": 70,
-    "SOCIAL_HANDLE": 68,
+
+    "MEDICAL_INFO": 88,
+    "MEDICATION": 86,
+    "DIAGNOSIS": 86,
+    "HOSPITAL": 80,
+    "HEALTH_CONTEXT": 78,
+
     "IP_ADDRESS": 66,
     "IPV6_ADDRESS": 66,
     "MAC_ADDRESS": 64,
     "DEVICE_ID": 64,
     "COOKIE_ID": 62,
     "TRACKING_ID": 62,
-    "MEDICAL_INFO": 88,
-    "MEDICATION": 86,
-    "DIAGNOSIS": 86,
-    "HOSPITAL": 80,
-    "HEALTH_CONTEXT": 78,
-    "BIOMETRIC_FACE": 90,
-    "BIOMETRIC_FINGERPRINT": 90,
-    "BIOMETRIC_VOICE": 88,
-    "BIOMETRIC": 86,
+
+    "EMAIL": 80,
+    "PHONE": 79,
+    "SOCIAL_HANDLE": 68,
+
+    "ADDRESS": 78,
+    "POSTCODE": 77,
+
+    "PERSON": 72,
+    "PERSON_NAME": 72,
+
     "EMPLOYER_NAME": 70,
     "JOB_TITLE": 60,
     "EMPLOYMENT_ID": 75,
     "STUDENT_ID": 70,
     "DEGREE": 60,
+
     "GEO_COORDINATES": 72,
     "TRAVEL_PLAN": 68,
     "EVENT_CHECKIN": 65,
-    "ACTIVITY_PATTERN": 65
+    "ACTIVITY_PATTERN": 65,
+
+    "URL": 70
   },
+
   "placeholders": {
     "NI_NUMBER": "<UK_NI_NUMBER>",
     "NHS_NUMBER": "<UK_NHS_NUMBER>",
     "PASSPORT_NUMBER": "<PASSPORT_NUMBER>",
     "DRIVING_LICENSE": "<DRIVING_LICENSE_NUMBER>",
+
     "EMAIL": "<EMAIL_ADDRESS>",
     "PHONE": "<PHONE_NUMBER>",
+    "SOCIAL_HANDLE": "<SOCIAL_HANDLE>",
+
     "ADDRESS": "<ADDRESS>",
     "POSTCODE": "<POSTCODE>",
+
     "URL": "<URL>",
-    "SOCIAL_HANDLE": "<SOCIAL_HANDLE>",
-    "BANK_ACCOUNT": "<BANK_ACCOUNT_XXXX>",
+
+    "BANK_ACCOUNT": "<BANK_ACCOUNT>",
     "SORT_CODE": "<SORT_CODE>",
     "IBAN": "<IBAN>",
-    "CARD_NUMBER": "<CARD_NUMBER_XXXX>",
+    "CARD_NUMBER": "<CARD_NUMBER>",
     "CUSTOMER_ID": "<CUSTOMER_ID>",
     "TRANSACTION_ID": "<TRANSACTION_ID>",
-    "BIOMETRIC_FACE": "<BIOMETRIC_FACE>",
-    "BIOMETRIC_FINGERPRINT": "<BIOMETRIC_FINGERPRINT>",
-    "BIOMETRIC_VOICE": "<BIOMETRIC_VOICE>",
-    "BIOMETRIC": "<BIOMETRIC>",
+
     "CREDENTIAL": "<CREDENTIAL>",
     "PASSWORD": "<PASSWORD>",
     "PIN": "<PIN>",
     "TOKEN": "<TOKEN>",
     "API_KEY": "<API_KEY>",
     "SESSION_ID": "<SESSION_ID>",
+
+    "PERSON": "<PERSON>",
+    "PERSON_NAME": "<PERSON>",
+
     "MEDICAL_INFO": "<MEDICAL_INFO>",
     "MEDICATION": "<MEDICATION>",
     "DIAGNOSIS": "<DIAGNOSIS>",
     "HOSPITAL": "<HOSPITAL>",
-    "HEALTH_CONTEXT": "<HEALTH_INFO>",
+    "HEALTH_CONTEXT": "<HEALTH_CONTEXT>",
+
     "IP_ADDRESS": "<IP_ADDRESS>",
     "IPV6_ADDRESS": "<IPV6_ADDRESS>",
     "MAC_ADDRESS": "<MAC_ADDRESS>",
     "DEVICE_ID": "<DEVICE_ID>",
     "COOKIE_ID": "<COOKIE_ID>",
     "TRACKING_ID": "<TRACKING_ID>",
+
     "EMPLOYER_NAME": "<EMPLOYER_NAME>",
     "JOB_TITLE": "<JOB_TITLE>",
     "EMPLOYMENT_ID": "<EMPLOYMENT_ID>",
     "STUDENT_ID": "<STUDENT_ID>",
     "DEGREE": "<DEGREE>",
+
     "GEO_COORDINATES": "<GEO_COORDINATES>",
-    "TRAVEL_PLAN": "<TRAVEL_ITINERARY>",
+    "TRAVEL_PLAN": "<TRAVEL_PLAN>",
     "EVENT_CHECKIN": "<EVENT_CHECKIN>",
     "ACTIVITY_PATTERN": "<ACTIVITY_PATTERN>",
+
     "GOV_ID": "<GOV_ID>"
   }
 }

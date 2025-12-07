@@ -45,6 +45,38 @@ def test_severity_training_smoke(tmp_path, monkeypatch):
             "pii_type": "CARD_NUMBER",
             "severity_label": "HIGH",
         },
+        {
+            "text": "Low risk context only",
+            "span_start": 0,
+            "span_end": 3,
+            "span_text": "Low",
+            "pii_type": "GENERIC_NUMBER",
+            "severity_label": "LOW",
+        },
+        {
+            "text": "Critical secret token ABCDEF",
+            "span_start": 23,
+            "span_end": 29,
+            "span_text": "ABCDEF",
+            "pii_type": "CREDENTIAL",
+            "severity_label": "VERY_HIGH",
+        },
+        {
+            "text": "Another low item",
+            "span_start": 0,
+            "span_end": 7,
+            "span_text": "Another",
+            "pii_type": "GENERIC_NUMBER",
+            "severity_label": "LOW",
+        },
+        {
+            "text": "Another critical code ZZZ999",
+            "span_start": 24,
+            "span_end": 30,
+            "span_text": "ZZZ999",
+            "pii_type": "CREDENTIAL",
+            "severity_label": "VERY_HIGH",
+        },
     ]
     data_path = tmp_path / "train.jsonl"
     data_path.write_text("\n".join(json.dumps(r) for r in data), encoding="utf-8")
@@ -72,3 +104,9 @@ def test_severity_training_smoke(tmp_path, monkeypatch):
     assert model_out.exists()
     assert (report_dir / f"{model_out.stem}_feature_importance.json").exists()
     assert (report_dir / f"{model_out.stem}_training_stats.json").exists()
+    # Model should load through the SeverityModel interface (metadata validation)
+    from pat.severity.model import SeverityModel
+
+    sev_model = SeverityModel(model_path=model_out)
+    # run a trivial predict to ensure the model is usable
+    sev_model.predict([0.0] * len(severity_train.FEATURE_NAMES))

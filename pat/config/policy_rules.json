@@ -1,14 +1,16 @@
 {
   "severity_thresholds": {
-    "LOW": [0.0, 0.2],
-    "MEDIUM": [0.2, 0.6],
-    "HIGH": [0.6, 0.85],
+    "LOW": [0.0, 0.25],
+    "MEDIUM": [0.25, 0.60],
+    "HIGH": [0.60, 0.85],
     "VERY_HIGH": [0.85, 1.0]
   },
+
   "rules": [
+
     {
       "id": "credentials_any",
-      "description": "Always mask authentication and secret material",
+      "description": "Always mask authentication and secret material (highest risk).",
       "pii_types": ["CREDENTIAL", "PASSWORD", "PIN", "TOKEN", "API_KEY", "SESSION_ID"],
       "severity_at_least": "LOW",
       "action": {
@@ -16,12 +18,13 @@
         "mask_strategy": "placeholder",
         "mask_args": { "placeholder": "<CREDENTIAL>" }
       },
-      "priority": 98,
+      "priority": 100,
       "enabled": true
     },
+
     {
-      "id": "financial_high",
-      "description": "Mask financial identifiers with semantic placeholders",
+      "id": "financial_any",
+      "description": "Mask all financial identifiers with a consistent placeholder.",
       "pii_types": ["BANK_ACCOUNT", "IBAN", "CARD_NUMBER", "SORT_CODE", "CUSTOMER_ID", "TRANSACTION_ID"],
       "severity_at_least": "LOW",
       "action": {
@@ -32,9 +35,10 @@
       "priority": 95,
       "enabled": true
     },
+
     {
-      "id": "gov_id",
-      "description": "Mask government IDs",
+      "id": "government_ids",
+      "description": "Mask all government-issued identifiers.",
       "pii_types": ["NI_NUMBER", "NHS_NUMBER", "PASSPORT_NUMBER", "DRIVING_LICENSE", "GOV_ID"],
       "severity_at_least": "LOW",
       "action": {
@@ -45,9 +49,10 @@
       "priority": 93,
       "enabled": true
     },
+
     {
-      "id": "person_identity",
-      "description": "Mask personal names as customer identifiers",
+      "id": "person_identity_mask",
+      "description": "Mask personal names (stable semantic identity).",
       "pii_types": ["PERSON", "PERSON_NAME"],
       "severity_at_least": "LOW",
       "action": {
@@ -58,9 +63,10 @@
       "priority": 92,
       "enabled": true
     },
+
     {
-      "id": "health",
-      "description": "Mask health and medical data",
+      "id": "health_mask",
+      "description": "Mask health and medical-related information.",
       "pii_types": ["MEDICAL_INFO", "MEDICATION", "DIAGNOSIS", "HOSPITAL", "HEALTH_CONTEXT"],
       "severity_at_least": "LOW",
       "action": {
@@ -71,9 +77,10 @@
       "priority": 92,
       "enabled": true
     },
+
     {
-      "id": "online_ids",
-      "description": "Mask online/device identifiers",
+      "id": "online_identifiers",
+      "description": "Mask device and network identifiers.",
       "pii_types": ["IP_ADDRESS", "IPV6_ADDRESS", "MAC_ADDRESS", "DEVICE_ID", "COOKIE_ID", "TRACKING_ID"],
       "severity_at_least": "LOW",
       "action": {
@@ -84,9 +91,24 @@
       "priority": 91,
       "enabled": true
     },
+
     {
-      "id": "contact_medium",
-      "description": "Mask contact details from medium severity upwards",
+      "id": "url_mask_low",
+      "description": "Mask URLs since query parameters may contain identifiers.",
+      "pii_types": ["URL"],
+      "severity_at_least": "LOW",
+      "action": {
+        "decision": "MASK",
+        "mask_strategy": "placeholder",
+        "mask_args": { "placeholder": "<URL>" }
+      },
+      "priority": 90,
+      "enabled": true
+    },
+
+    {
+      "id": "contact_medium_plus",
+      "description": "Mask contact identifiers unless severity is LOW.",
       "pii_types": ["EMAIL", "PHONE", "SOCIAL_HANDLE"],
       "severity_at_least": "MEDIUM",
       "action": {
@@ -97,18 +119,20 @@
       "priority": 70,
       "enabled": true
     },
+
     {
-      "id": "contact_low_allow",
-      "description": "Allow low severity contact when explicitly low risk",
+      "id": "contact_low_explicit_allow",
+      "description": "Allow low-severity, low-risk contact information.",
       "pii_types": ["EMAIL", "PHONE"],
       "severity_in": ["LOW"],
       "action": { "decision": "ALLOW" },
-      "priority": 10,
+      "priority": 25,
       "enabled": true
     },
+
     {
-      "id": "address_location",
-      "description": "Mask addresses and postcodes",
+      "id": "address_location_mask",
+      "description": "Mask physical addresses and postcodes.",
       "pii_types": ["ADDRESS", "POSTCODE"],
       "severity_at_least": "MEDIUM",
       "action": {
@@ -119,9 +143,10 @@
       "priority": 65,
       "enabled": true
     },
+
     {
-      "id": "employment",
-      "description": "Mask employment and education IDs",
+      "id": "employment_mask",
+      "description": "Mask employment/education identifiers.",
       "pii_types": ["EMPLOYER_NAME", "JOB_TITLE", "EMPLOYMENT_ID", "STUDENT_ID", "DEGREE"],
       "severity_at_least": "MEDIUM",
       "action": {
@@ -132,9 +157,10 @@
       "priority": 64,
       "enabled": true
     },
+
     {
-      "id": "location_activity",
-      "description": "Mask GPS or travel/activity traces",
+      "id": "location_activity_mask",
+      "description": "Mask GPS, activity traces, or movement patterns.",
       "pii_types": ["GEO_COORDINATES", "TRAVEL_PLAN", "EVENT_CHECKIN", "ACTIVITY_PATTERN"],
       "severity_at_least": "LOW",
       "action": {
@@ -145,22 +171,10 @@
       "priority": 63,
       "enabled": true
     },
-    {
-      "id": "url_mask",
-      "description": "Mask URLs to avoid leaking query tokens",
-      "pii_types": ["URL"],
-      "severity_at_least": "LOW",
-      "action": {
-        "decision": "MASK",
-        "mask_strategy": "placeholder",
-        "mask_args": { "placeholder": "<URL>" }
-      },
-      "priority": 60,
-      "enabled": true
-    },
+
     {
       "id": "allow_low_generic_number",
-      "description": "Allow benign low-severity generic numbers",
+      "description": "Allow benign low-severity numeric values (non-sensitive).",
       "pii_types": ["GENERIC_NUMBER"],
       "severity_in": ["LOW"],
       "action": { "decision": "ALLOW" },

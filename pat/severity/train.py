@@ -18,7 +18,9 @@ from pat.embeddings import EmbeddingModel
 from pat.fusion import FusedSpan, FusionEngine
 from pat.severity.features import (
     FEATURE_NAMES,
+    FEATURE_SCHEMA_VERSION,
     assert_feature_schema,
+    compute_neighbor_stats,
     compute_span_sentence_context,
     compute_token_position_ratio,
     get_span_context_text,
@@ -198,6 +200,8 @@ class SpanDatasetBuilder:
                 span_end_str = row.get(span_end_column)
                 span_text_val = row.get(span_text_column)
                 pii_type_val = row.get(pii_type_column, "OTHER")
+                confidence_val = float(row.get("confidence", 0.8))
+                sources_val = list(row.get("sources", []) or [])
 
             if span_start_str is None or span_end_str is None:
                 # --- ROBUST DATA REPAIR LOGIC ---
@@ -223,6 +227,8 @@ class SpanDatasetBuilder:
                     span_start = found_span.start
                     span_end = found_span.end
                     span_text = found_span.text
+                    confidence_val = getattr(found_span, "confidence", 0.8)
+                    sources_val = [getattr(found_span, "detector_name", "detector")]
                 else:
                     span_text = span_text_val
             else:
@@ -241,7 +247,7 @@ class SpanDatasetBuilder:
                 continue
 
             pre_processed_rows.append(
-                (text, int(span_start), int(span_end), span_text, pii_type)
+                (text, int(span_start), int(span_end), span_text, pii_type, float(confidence_val), list(sources_val))
             )
             labels.append(label)
 
@@ -251,9 +257,19 @@ class SpanDatasetBuilder:
         # Batch process all embeddings for efficiency
         LOG.info("Building spans and context for batch embedding...")
         spans = [
-            self._build_span(text, start, end, span_text, pii_type)
-            for text, start, end, span_text, pii_type in pre_processed_rows
+            self._build_span(text, start, end, span_text, pii_type, confidence, sources)
+            for text, start, end, span_text, pii_type, confidence, sources in pre_processed_rows
         ]
+        # Compute neighbor stats per text to mirror inference-time features.
+        neighbor_stats: dict[int, tuple[int, int]] = {}
+        text_to_indices: dict[str, list[int]] = {}
+        for idx, (text, *_rest) in enumerate(pre_processed_rows):
+            text_to_indices.setdefault(text, []).append(idx)
+        for text, indices in text_to_indices.items():
+            local_spans = [spans[i] for i in indices]
+            local_stats = compute_neighbor_stats(local_spans)
+            for local_idx, stats in local_stats.items():
+                neighbor_stats[indices[local_idx]] = stats
         span_texts = [s.text for s in spans]
         context_texts = [
             get_span_context_text(row[0], row[1], row[2]) for row in pre_processed_rows
@@ -270,6 +286,7 @@ class SpanDatasetBuilder:
             sentences = compute_sentence_boundaries(text)
             sentence_index, sentence_ratio = compute_span_sentence_context(span, sentences)
             token_ratio = compute_token_position_ratio(text, span)
+            neighbor_span_count, neighbor_high_risk_count = neighbor_stats.get(i, (0, 0))
 
             features = extract_span_features(
                 span,
@@ -279,6 +296,8 @@ class SpanDatasetBuilder:
                 sentence_index=sentence_index,
                 sentence_position_ratio=sentence_ratio,
                 token_position_ratio=token_ratio,
+                neighbor_span_count=neighbor_span_count,
+                neighbor_high_risk_count=neighbor_high_risk_count,
             )
             vector = span_features_to_vector(features)
             if vector.shape[0] != len(FEATURE_NAMES):
@@ -291,15 +310,22 @@ class SpanDatasetBuilder:
         return np.vstack(features_list), labels
 
     def _build_span(
-        self, text: str, start: int, end: int, span_text: str, pii_type: str
+        self,
+        text: str,
+        start: int,
+        end: int,
+        span_text: str,
+        pii_type: str,
+        confidence: float,
+        sources: list[str],
     ) -> FusedSpan:
         span = FusedSpan(
             start=start,
             end=end,
             text=span_text,
             pii_type=pii_type,
-            max_confidence=0.8,
-            sources=[],
+            max_confidence=confidence,
+            sources=list(sources),
         )
         if not self.use_detectors or self.runner is None or self.fusion is None:
             return span
@@ -515,8 +541,23 @@ def train(argv: Sequence[str] | None = None) -> None:
         model.feature_names_in_ = np.array(FEATURE_NAMES)  # type: ignore[attr-defined]
     except Exception:
         model.pat_feature_names = FEATURE_NAMES  # fallback when property is read-only
+    try:
+        model.schema_version = FEATURE_SCHEMA_VERSION  # type: ignore[attr-defined]
+    except Exception:
+        ...
+    try:
+        model.class_labels = CLASS_LIST  # type: ignore[attr-defined]
+    except Exception:
+        ...
     joblib.dump(model, args.output)  # type: ignore[arg-type]
-    LOG.info("Model saved to %s", args.output)
+    metadata = {
+        "feature_names": FEATURE_NAMES,
+        "class_labels": CLASS_LIST,
+        "schema_version": FEATURE_SCHEMA_VERSION,
+    }
+    meta_path = args.output.with_suffix(".metadata.json")
+    meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    LOG.info("Model saved to %s (metadata -> %s)", args.output, meta_path)
 
     # Save feature importance and training stats
     if hasattr(base_model, "feature_importances_"):

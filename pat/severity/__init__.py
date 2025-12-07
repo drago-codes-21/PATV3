@@ -2,6 +2,7 @@
 
 from .features import (
     FEATURE_NAMES,
+    FEATURE_SCHEMA_VERSION,
     compute_neighbor_stats,
     compute_span_sentence_context,
     compute_token_position_ratio,
@@ -13,6 +14,7 @@ from .model import SeverityModel
 
 __all__ = [
     "FEATURE_NAMES",
+    "FEATURE_SCHEMA_VERSION",
     "SeverityModel",
     "compute_neighbor_stats",
     "compute_span_sentence_context",

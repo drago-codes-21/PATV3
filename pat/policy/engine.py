@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from pat.config import get_settings
 from pat.policy.masking import apply_mask
+from pat.utils.taxonomy import placeholder_for_type
 from pat.fusion import FusedSpan
 
 LOG = logging.getLogger(__name__)
@@ -24,6 +26,9 @@ class PolicyDecision:
     rule_id: str | None
     placeholder: str | None = None
     severity_label: str | None = None
+    masked_text: str | None = None
+    mask_strategy: str | None = None
+    mask_args: dict[str, Any] | None = None
 
 
 class PolicyEngine:
@@ -83,7 +88,9 @@ class PolicyEngine:
 
         for span in spans:
             span_severity_score = getattr(span, "severity_score", 0.0)
-            severity_label = self.get_severity_label(span_severity_score or 0.0)
+            severity_label = getattr(span, "severity_label", None) or self.get_severity_label(
+                span_severity_score or 0.0
+            )
             matched_rule = False
 
             for rule in self.rules:
@@ -107,12 +114,19 @@ class PolicyEngine:
                     continue
 
                 # First matching rule wins
-                action_config = rule.get("action", {})
+                action_config: dict[str, Any] = rule.get("action", {}) or {}
                 action_type = action_config.get("decision")
                 if not action_type:
                     continue
 
+                mask_strategy = action_config.get("mask_strategy") or "placeholder"
+                mask_args = action_config.get("mask_args", {}) or {}
                 placeholder = self._get_placeholder(span, action_config)
+                masked_text = (
+                    apply_mask(mask_strategy, span.text, mask_args)
+                    if action_type == "MASK"
+                    else None
+                )
                 setattr(
                     span,
                     "policy_decision",
@@ -121,6 +135,8 @@ class PolicyEngine:
                         "rule_id": rule.get("id"),
                         "placeholder": placeholder,
                         "severity_label": severity_label,
+                        "mask_strategy": mask_strategy,
+                        "mask_args": mask_args,
                     },
                 )
                 decisions.append(
@@ -130,29 +146,77 @@ class PolicyEngine:
                         rule_id=rule.get("id"),
                         placeholder=placeholder,
                         severity_label=severity_label,
+                        masked_text=masked_text,
+                        mask_strategy=mask_strategy,
+                        mask_args=mask_args,
                     )
                 )
                 matched_rule = True
                 break  # Move to the next span
 
             if not matched_rule:
+                # Default decision is severity-aware: never allow VERY_HIGH, and only
+                # allow HIGH when explicitly configured. Defaults are conservative.
+                default_action = "ALLOW"
+                default_rule = "default_allow"
+                placeholder = None
+                masked_text = None
+                if severity_label in {"HIGH", "VERY_HIGH"}:
+                    default_action = "MASK"
+                    default_rule = "default_mask_high"
+                    placeholder = self._get_placeholder(span, {"mask_strategy": "placeholder"})
+                    masked_text = apply_mask("placeholder", span.text, {"placeholder": placeholder})
+
                 setattr(
                     span,
                     "policy_decision",
                     {
-                        "decision": "ALLOW",
-                        "rule_id": "default_allow",
-                        "placeholder": None,
+                        "decision": default_action,
+                        "rule_id": default_rule,
+                        "placeholder": placeholder,
                         "severity_label": severity_label,
                     },
                 )
                 decisions.append(
                     PolicyDecision(
                         span=span,
-                        action="ALLOW",
-                        rule_id="default_allow",
+                        action=default_action,
+                        rule_id=default_rule,
                         severity_label=severity_label,
+                        placeholder=placeholder,
+                        masked_text=masked_text,
                     )
+                )
+
+            # Safety invariant: VERY_HIGH spans must never be allowed.
+            last_decision = decisions[-1]
+            if severity_label == "VERY_HIGH" and last_decision.action == "ALLOW":
+                safe_placeholder = last_decision.placeholder or self._get_placeholder(
+                    span, {"mask_strategy": "placeholder"}
+                )
+                safe_masked = apply_mask("placeholder", span.text, {"placeholder": safe_placeholder})
+                safe = PolicyDecision(
+                    span=span,
+                    action="MASK",
+                    rule_id=f"{last_decision.rule_id}_forced_mask" if last_decision.rule_id else "forced_mask",
+                    placeholder=safe_placeholder,
+                    severity_label=severity_label,
+                    masked_text=safe_masked,
+                    mask_strategy="placeholder",
+                    mask_args={"placeholder": safe_placeholder},
+                )
+                decisions[-1] = safe
+                setattr(
+                    span,
+                    "policy_decision",
+                    {
+                        "decision": safe.action,
+                        "rule_id": safe.rule_id,
+                        "placeholder": safe.placeholder,
+                        "severity_label": safe.severity_label,
+                        "mask_strategy": safe.mask_strategy,
+                        "mask_args": safe.mask_args,
+                    },
                 )
 
         return decisions
@@ -168,10 +232,15 @@ class PolicyEngine:
         mask_args = action_config.get("mask_args", {})
 
         if mask_strategy == "placeholder":
-            return mask_args.get("placeholder")
+            return mask_args.get("placeholder") or placeholder_for_type(span.pii_type)
+
+        # Default to a taxonomy placeholder if available when no explicit strategy is provided.
+        placeholder = placeholder_for_type(span.pii_type)
+        if placeholder:
+            return placeholder
 
         # Fallback for other strategies or legacy formats, though the provided JSON uses 'placeholder'.
         if "style" in action_config:
             return apply_mask(action_config["style"], span.text, action_config)
 
-        return None
+        return f"<{span.pii_type}>"

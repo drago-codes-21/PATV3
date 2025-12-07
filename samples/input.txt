@@ -1,2 +1,9 @@
-Hi Support,
-Please block this immediately. Customer John Doe shared: bank account 11892347, sort code 40-51-22, IBAN GB29NWBK60161331926819, and card 4111-1111-1111-1111. His email is john.doe.personal@outlook.com, phone +44 20 7555 1289, and address 221B Baker Street, London NW1 6XE. He also pasted API-ABCD1234SECRET, pwd: SuperSecret!7, and OTP 843920. Laptop MAC 00:1A:2B:3C:4D:5E, IP 192.168.10.5, IPv6 fe80::1ff:fe23:4567:890a. Passport 123456789, NI number QQ123456C, NHS number 943 476 5919, student SID123456, and device dev-a1b2c3d4e5. He clicked https://example.com/reset?token=abcdef.
+Hi Maria Collins,
+
+Please process the refund to this card: 4485 9932 1184 2231 and update my record with the new address:
+27 Willow Rise, Manchester M14 6PX.
+
+Also, my NHS number is 943 128 5592 if needed.
+
+Thanks,  
+Jonathan Reed

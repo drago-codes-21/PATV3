@@ -43,12 +43,15 @@ def _apply_redactions(text: str, decisions: list[PolicyDecision]) -> str:
             # For this implementation, we'll log and mask.
             LOG.error("BLOCK action triggered by rule %s. Masking content.", decision.rule_id)
 
-        placeholder = decision.placeholder
-        if placeholder is None:
+        replacement = decision.masked_text or decision.placeholder
+        if replacement is None:
             # If a MASK/BLOCK action has no placeholder, it's a policy misconfiguration.
             # We provide a sensible default instead of failing.
-            placeholder = f"[{span.pii_type}]"
-        sanitized_text = sanitized_text[:start] + placeholder + sanitized_text[end:]
+            replacement = f"[{span.pii_type}]"
+        if start < 0 or end > len(sanitized_text) or start > end:
+            LOG.warning("Skipping invalid span application: %s", decision)
+            continue
+        sanitized_text = sanitized_text[:start] + replacement + sanitized_text[end:]
 
     return sanitized_text
 

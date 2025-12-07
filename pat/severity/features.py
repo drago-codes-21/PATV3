@@ -170,6 +170,8 @@ BASE_FEATURES: list[str] = [
 
 FEATURE_NAMES: list[str] = BASE_FEATURES + [f"pii_type_{t}" for t in ALL_PII_TYPES]
 FEATURE_NAMES += [f"pii_category_{c}" for c in CATEGORIES]
+FEATURE_SCHEMA_VERSION = "severity_v1"
+FEATURE_SCHEMA = {"version": FEATURE_SCHEMA_VERSION, "feature_names": FEATURE_NAMES}
 _EXPECTED_FEATURE_COUNT = len(FEATURE_NAMES)
 FEATURE_NAME_SET = tuple(FEATURE_NAMES)
 
@@ -452,4 +454,6 @@ def assert_feature_schema(names: Sequence[str]) -> None:
             f"Feature schema length mismatch: expected {_EXPECTED_FEATURE_COUNT}, got {len(names)}"
         )
     if list(names) != FEATURE_NAMES:
-        raise AssertionError("Feature schema order/content mismatch against canonical FEATURE_NAMES.")
+        raise AssertionError(
+            f"Feature schema order/content mismatch against canonical FEATURE_NAMES (schema {FEATURE_SCHEMA_VERSION})."
+        )

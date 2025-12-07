@@ -17,7 +17,7 @@ from pat.calibration import calibrate_thresholds as calib
 from pat.config import get_settings
 from pat.detectors.embedding_detector import EmbeddingSimilarityDetector
 from pat.detectors.ml_token_classifier import MLTokenClassifierDetector
-from pat.severity.features import assert_feature_schema, FEATURE_NAMES
+from pat.severity.features import assert_feature_schema, FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from pat.severity.analysis import _compute_stats, _drift, _load_jsonl_features  # type: ignore
 from pat.cip import report as cip_report
 
@@ -296,6 +296,7 @@ def run(argv: list[str] | None = None) -> None:
         "e2e_candidate": retrain_info.get("candidate_metrics"),
         "multi_detector_spans": baseline_metrics.get("multi_detector_spans"),
         "single_detector_spans": baseline_metrics.get("single_detector_spans"),
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "suggested_actions": [],
     }
     report_md = artifact_dir / f"{_timestamp()}_cip_report.md"

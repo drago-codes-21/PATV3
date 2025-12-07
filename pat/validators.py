@@ -1,4 +1,13 @@
-"""A registry of validator functions for the regex detector."""
+"""
+Validator registry for the RegexDetector.
+
+These functions perform structural or semantic checks on regex-captured spans.
+All validators:
+    - Must be deterministic
+    - Must not raise exceptions
+    - Must not modify global state
+    - Must operate ONLY on match.group(1) unless otherwise documented
+"""
 
 from __future__ import annotations
 
@@ -9,151 +18,255 @@ from typing import Callable
 from pat.config.patterns import SAFE_EMAIL_DOMAINS
 
 
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+def _extract_group(match: re.Match) -> str:
+    """Safely return match.group(1) with defensive guards."""
+    try:
+        return match.group(1)
+    except Exception:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Luhn checksum (credit/debit cards)
+# ---------------------------------------------------------------------------
+
 def is_luhn_valid(match: re.Match) -> bool:
-    """Check if a number is valid using the Luhn algorithm."""
-    card_number = re.sub(r"[ -]", "", match.group(1))
-    if not card_number.isdigit():
+    num = re.sub(r"[ -]", "", _extract_group(match))
+    if not num.isdigit() or len(num) < 12:
         return False
-    digits = [int(d) for d in card_number]
-    checksum = sum(digits[-1::-2]) + sum(
-        [sum(divmod(d * 2, 10)) for d in digits[-2::-2]]
-    )
+
+    digits = [int(d) for d in num]
+    checksum = sum(digits[-1::-2]) + sum(sum(divmod(d * 2, 10)) for d in digits[-2::-2])
     return checksum % 10 == 0
 
 
-def is_sort_code_valid(match: re.Match) -> bool:
-    """Basic structural validation for UK sort codes."""
-    code = re.sub(r"[- ]", "", match.group(1))
-    return len(code) == 6 and code.isdigit()
+# ---------------------------------------------------------------------------
+# UK Sort Code
+# ---------------------------------------------------------------------------
 
+def is_sort_code_valid(match: re.Match) -> bool:
+    code = re.sub(r"[- ]", "", _extract_group(match))
+    # Additional guard: prevent nonsense like 000000
+    return len(code) == 6 and code.isdigit() and not all(c == "0" for c in code)
+
+
+# ---------------------------------------------------------------------------
+# GB IBAN
+# ---------------------------------------------------------------------------
 
 def is_gb_iban_valid(match: re.Match) -> bool:
-    """Validate a GB IBAN using the mod-97 checksum."""
-    iban = re.sub(r"\s", "", match.group(1)).upper()
-    if len(iban) != 22 or not iban.startswith("GB"):
+    raw = re.sub(r"\s", "", _extract_group(match)).upper()
+    if len(raw) != 22 or not raw.startswith("GB"):
         return False
-    rearranged = iban[4:] + iban[:4]
-    # Convert letters to numbers (A=10, B=11, ..., Z=35)
-    converted = ""
+
+    # Rearrange for mod97: move first 4 chars to the end
+    rearranged = raw[4:] + raw[:4]
+
+    # Convert letters to digits (A=10, ..., Z=35)
+    converted = []
     for ch in rearranged:
         if ch.isdigit():
-            converted += ch
+            converted.append(ch)
+        elif "A" <= ch <= "Z":
+            converted.append(str(ord(ch) - 55))
         else:
-            converted += str(ord(ch) - 55)
+            return False
+
     try:
-        return int(converted) % 97 == 1
-    except ValueError:
+        return int("".join(converted)) % 97 == 1
+    except Exception:
         return False
 
+
+# ---------------------------------------------------------------------------
+# UK National Insurance (NINO)
+# ---------------------------------------------------------------------------
 
 def is_nino_valid(match: re.Match) -> bool:
-    """Validate the structure of a UK National Insurance Number."""
-    nino = match.group(1).upper()
-    # For production we allow synthetic prefixes (e.g., QQ) often used in test data.
+    nino = _extract_group(match).upper()
     if len(nino) != 9:
         return False
-    return bool(re.match(r"^[A-Z]{2}\d{6}[A-D]$", nino))
+    # Accept "QQ" prefix for synthetic test numbers
+    return bool(re.fullmatch(r"[A-Z]{2}\d{6}[A-D]", nino))
 
+
+# ---------------------------------------------------------------------------
+# NHS number (mod11 checksum)
+# ---------------------------------------------------------------------------
 
 def is_nhs_number_valid(match: re.Match) -> bool:
-    """Validate an NHS number using the mod-11 checksum."""
-    nhs_number = re.sub(r"\s", "", match.group(1))
-    if len(nhs_number) != 10 or not nhs_number.isdigit():
+    num = re.sub(r"\s", "", _extract_group(match))
+    if len(num) != 10 or not num.isdigit():
         return False
-    digits = [int(d) for d in nhs_number]
-    weights = list(range(10, 1, -1))  # 10 to 2
+
+    digits = [int(d) for d in num]
+    weights = list(range(10, 1, -1))
     total = sum(d * w for d, w in zip(digits[:9], weights))
     remainder = total % 11
+
     check_digit = 11 - remainder
     if check_digit == 11:
         check_digit = 0
     if check_digit == 10:
         return False
+
     return check_digit == digits[9]
 
 
-def is_email_safe(match: re.Match) -> bool:
-    """Check if an email domain is in the safe list."""
-    email = match.group(1)
-    domain = email.split("@")[1]
-    return domain.lower() not in SAFE_EMAIL_DOMAINS
+# ---------------------------------------------------------------------------
+# Email domain safety check
+# ---------------------------------------------------------------------------
 
+def is_email_safe(match: re.Match) -> bool:
+    email = _extract_group(match)
+    if "@" not in email:
+        return False
+    try:
+        domain = email.split("@", 1)[1].lower()
+        return domain not in SAFE_EMAIL_DOMAINS
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# IP validation
+# ---------------------------------------------------------------------------
 
 def is_ipv4_valid(match: re.Match) -> bool:
-    """Validate an IPv4 address."""
     try:
-        ipaddress.ip_address(match.group(1))
+        ipaddress.IPv4Address(_extract_group(match))
         return True
-    except ValueError:
+    except Exception:
         return False
 
 
 def is_ipv6_valid(match: re.Match) -> bool:
-    """Validate an IPv6 address."""
     try:
-        ipaddress.ip_address(match.group(1))
+        ipaddress.IPv6Address(_extract_group(match))
         return True
-    except ValueError:
+    except Exception:
         return False
 
 
-def always_true(match: re.Match) -> bool:
-    """A default validator that always passes."""
+# ---------------------------------------------------------------------------
+# PIN validation
+# ---------------------------------------------------------------------------
+
+def is_pin_valid(match: re.Match) -> bool:
+    pin = _extract_group(match)
+    return pin.isdigit() and 4 <= len(pin) <= 6 and not (pin == pin[0] * len(pin))
+
+
+# ---------------------------------------------------------------------------
+# Password heuristic (very conservative)
+# ---------------------------------------------------------------------------
+
+def is_password_like(match: re.Match) -> bool:
+    pwd = _extract_group(match)
+    # Reject trivial passwords
+    if len(pwd) < 6:
+        return False
+    if pwd.lower() in {"password", "passcode", "pwd"}:
+        return False
+    if pwd.isdigit():
+        return False
     return True
 
 
+# ---------------------------------------------------------------------------
+# Date validation
+# ---------------------------------------------------------------------------
+
+def is_date_valid(match: re.Match) -> bool:
+    text = _extract_group(match)
+    parts = re.split(r"[/-]", text)
+
+    if len(parts) != 3:
+        return False
+
+    try:
+        d, m, y = map(int, parts)
+    except Exception:
+        return False
+
+    if not (1 <= d <= 31 and 1 <= m <= 12 and 0 <= y <= 9999):
+        return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Money (simple guard)
+# ---------------------------------------------------------------------------
+
 def is_money_valid(match: re.Match) -> bool:
-    """Basic currency sanity: numeric portion must be reasonable length."""
-    value = re.sub(r"[^\d.,]", "", match.group(1))
-    digits = re.sub(r"\D", "", value)
+    raw = _extract_group(match)
+    digits = re.sub(r"\D", "", raw)
     return 1 <= len(digits) <= 8
 
 
-def is_pin_valid(match: re.Match) -> bool:
-    pin = match.group(1)
-    return pin.isdigit() and 4 <= len(pin) <= 6
+# ---------------------------------------------------------------------------
+# Phone length validator
+# ---------------------------------------------------------------------------
+
+def is_phone_len_valid(match: re.Match) -> bool:
+    digits = re.sub(r"\D", "", _extract_group(match))
+    return 10 <= len(digits) <= 15
 
 
-def is_password_like(match: re.Match) -> bool:
-    pwd = match.group(1)
-    return len(pwd) >= 6
+# ---------------------------------------------------------------------------
+# Roll number validator
+# ---------------------------------------------------------------------------
 
-
-def is_date_valid(match: re.Match) -> bool:
-    """Check dd/mm/yyyy style dates are plausible."""
-    parts = re.split(r"[/-]", match.group(1))
-    if len(parts) != 3:
+def is_roll_number_valid(match: re.Match) -> bool:
+    text = _extract_group(match)
+    if not (7 <= len(text) <= 20):
         return False
+    return any(c.isdigit() for c in text) and any(c.isalpha() for c in text)
+
+
+# ---------------------------------------------------------------------------
+# GPS sanity check
+# ---------------------------------------------------------------------------
+
+def is_gps_valid(match: re.Match) -> bool:
     try:
-        d, m, y = map(int, parts)
-        if y < 0 or m < 1 or m > 12 or d < 1 or d > 31:
-            return False
-    except ValueError:
+        lat_str, lon_str = match.group(1), match.group(2)
+        lat = float(lat_str)
+        lon = float(lon_str)
+        return -90 <= lat <= 90 and -180 <= lon <= 180
+    except Exception:
         return False
-    return True
 
 
-# A central registry mapping validator names to functions.
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
 VALIDATORS: dict[str, Callable[[re.Match], bool]] = {
     "card_luhn": is_luhn_valid,
     "sort_code": is_sort_code_valid,
-    "account_number": always_true,  # No standard checksum
+    "account_number": lambda m: True,  # No checksum format for UK 8-digit accounts
     "gb_iban": is_gb_iban_valid,
-    "roll_number": lambda m: (any(c.isdigit() for c in m.group(1)) and any(c.isalpha() for c in m.group(1)) and 7 <= len(m.group(1)) <= 20),
+    "roll_number": is_roll_number_valid,
     "email_safe": is_email_safe,
-    "postcode": always_true,  # Regex is quite specific
-    "phone_len": lambda m: 10 <= len(re.sub(r"\D", "", m.group(1))) <= 15,
+    "postcode": lambda m: True,  # Regex already enforces format
+    "phone_len": is_phone_len_valid,
     "nino": is_nino_valid,
     "nhs_number": is_nhs_number_valid,
-    "passport": always_true,
-    "driving_license": always_true,
+    "passport": lambda m: True,  # keyword-gated upstream
+    "driving_license": lambda m: True,
     "money": is_money_valid,
     "pin": is_pin_valid,
     "password": is_password_like,
     "date": is_date_valid,
     "ipv4": is_ipv4_valid,
     "ipv6": is_ipv6_valid,
-    "mac_address": always_true,
-    "url": always_true,
-    "gps": always_true,
+    "mac_address": lambda m: True,
+    "url": lambda m: True,
+    "gps": is_gps_valid,
 }

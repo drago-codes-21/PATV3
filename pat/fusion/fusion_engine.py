@@ -6,10 +6,10 @@ single, consolidated FusedSpan with deterministic boundary and type handling.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import Sequence, List
 
 from pat.config import get_settings
-from pat.detectors import DetectorResult
+from pat.detectors.base import DetectorResult
 from pat.detectors.debug_logging import log_decision
 from pat.fusion.span import FusedSpan
 from pat.utils.taxonomy import category_for_type, priority_for_type
@@ -21,9 +21,16 @@ LOG = logging.getLogger(__name__)
 class FusionEngine:
     """Merges overlapping DetectorResult spans into FusedSpan objects."""
 
+    # Max distance (in characters) to treat two spans as "adjacent" for merging
     MERGE_GAP = 1
+
+    # IoU threshold for merging spans with different types but strong overlap
     MIN_IOU_FOR_MISMATCHED_TYPES = 0.1
+
+    # Bonus added to confidence for each additional agreeing detector
     SCORE_BONUS_PER_DETECTOR = 0.05
+
+    # Base type priority; can be extended from taxonomy
     TYPE_PRIORITY: dict[str, int] = {
         "CREDENTIAL": 90,
         "CARD_NUMBER": 85,
@@ -43,6 +50,7 @@ class FusionEngine:
         "MONEY": 38,
         "GENERIC_NUMBER": 15,
     }
+
     NAME_TYPES = {"PERSON", "PERSON_NAME"}
     ADDRESS_TYPES = {"ADDRESS", "LOCATION", "LOC", "GPE", "POSTCODE"}
     NUMERIC_TYPES = {
@@ -57,34 +65,59 @@ class FusionEngine:
 
     def __init__(self, *, context_window: int | None = None) -> None:
         settings = get_settings()
-        self.detector_weights = settings.detector_weights
+        self.detector_weights = getattr(settings, "detector_weights", {}) or {}
         self.context_window = context_window or getattr(settings, "fusion_context_window", 80)
         self.debug_enabled = getattr(settings, "debug_fusion", False)
+
+        # Allow taxonomy to extend/override priority
         try:
             from pat.utils.taxonomy import pii_schema
 
+            schema = pii_schema() or {}
+            extra_priorities = {
+                k: int(v) for k, v in schema.get("type_priority", {}).items()
+            }
             merged = dict(self.TYPE_PRIORITY)
-            merged.update({k: int(v) for k, v in pii_schema().get("type_priority", {}).items()})
+            merged.update(extra_priorities)
             self.TYPE_PRIORITY = merged
-        except Exception:
-            ...
+        except Exception as e:
+            LOG.warning(f"Failed to load type_priority from taxonomy: {e}")
 
+    # ---------------------------------------------------------------------
+    # Public API
+    # ---------------------------------------------------------------------
     def fuse(self, results: Sequence[DetectorResult], *, text: str | None = None) -> list[FusedSpan]:
         """
         Fuses a list of detector results into a minimal list of FusedSpans.
 
-        Overlap or adjacency is required for a merge to prevent runaway boundary
-        creep. When types differ, a minimum IoU gate prevents unrelated spans
-        from being merged while still collapsing obviously co-referent spans.
+        - Requires overlap or adjacency for merges (prevents runaway boundary creep).
+        - Uses type and category compatibility + IoU to avoid unrelated merges.
         """
         if not results:
             return []
 
-        # Stable sort: start asc, longer span first, higher confidence first.
-        sorted_results = sorted(
-            results,
-            key=lambda r: (r.start, -(r.end - r.start), -(getattr(r, "score", None) or r.confidence)),
-        )
+        # Filter out obviously invalid spans to avoid corrupt fusion.
+        valid_results: List[DetectorResult] = []
+        for r in results:
+            if r.start >= r.end:
+                LOG.warning(
+                    f"Skipping invalid DetectorResult with start>=end: "
+                    f"start={r.start}, end={r.end}, type={getattr(r, 'pii_type', None)}"
+                )
+                continue
+            valid_results.append(r)
+
+        if not valid_results:
+            return []
+
+        # Stable sort: start asc, longer span first, higher confidence/score first.
+        def _sort_key(r: DetectorResult) -> tuple[int, int, float]:
+            length = r.end - r.start
+            score_val = getattr(r, "score", None)
+            score = float(score_val) if score_val is not None else float(r.confidence)
+            return (r.start, -length, -score)
+
+        sorted_results = sorted(valid_results, key=_sort_key)
 
         fused_spans: list[FusedSpan] = []
         current_span = FusedSpan.from_detector_result(sorted_results[0])
@@ -97,15 +130,27 @@ class FusionEngine:
                 current_span = FusedSpan.from_detector_result(next_result)
 
         self._finalize_span(current_span, text, fused_spans)
+
+        # Ensure deterministic ordering of final spans
+        fused_spans.sort(key=lambda fs: (fs.start, fs.end))
         return fused_spans
 
+    # ---------------------------------------------------------------------
+    # Merge decision logic
+    # ---------------------------------------------------------------------
     def _should_merge(self, fused: FusedSpan, incoming: DetectorResult) -> bool:
+        """
+        Decide whether to merge an incoming detector span into an existing FusedSpan.
+        """
         overlap = min(fused.end, incoming.end) - max(fused.start, incoming.start)
         adjacent = incoming.start - fused.end
+
         if overlap > 0:
             return self._types_compatible(fused, incoming, overlap=overlap)
+
         if 0 <= adjacent <= self.MERGE_GAP:
             return self._types_compatible(fused, incoming, overlap=0, allow_adjacent=True)
+
         return False
 
     def _types_compatible(
@@ -116,52 +161,118 @@ class FusionEngine:
         overlap: int,
         allow_adjacent: bool = False,
     ) -> bool:
+        """
+        Type compatibility heuristic:
+
+        - Always merge if same type.
+        - Merge within the same "family" (names, addresses, numeric IDs).
+        - For adjacency:
+          - Loosen conditions for multi-token names/addresses and numeric fragments.
+        - For conflicting categories:
+          - Do not merge unless categories agree.
+        - For different types but strong overlap:
+          - Use IoU threshold to merge obviously co-referent spans.
+        """
         incoming_type = incoming.pii_type
-        incoming_cat = getattr(incoming, "category", None) or category_for_type(incoming_type)
+        try:
+            incoming_cat = getattr(incoming, "category", None) or category_for_type(incoming_type)
+        except Exception as e:
+            LOG.error(f"Failed to infer category for incoming type {incoming_type}: {e}")
+            incoming_cat = None
+
         fused_cats = fused.all_categories or ({fused.category} if fused.category else set())
+
+        # Same type: always compatible
         if incoming_type in fused.all_types:
             return True
-        if self._is_name_type(incoming_type) and any(
-            self._is_name_type(t) for t in fused.all_types
-        ):
+
+        # Same semantic family (names, addresses, numeric)
+        if self._is_name_type(incoming_type) and any(self._is_name_type(t) for t in fused.all_types):
             return True
+
         if self._is_address_type(incoming_type) and any(
             self._is_address_type(t) for t in fused.all_types
         ):
             return True
+
         if self._is_numeric_type(incoming_type) and any(
             self._is_numeric_type(t) for t in fused.all_types
         ):
             return True
 
+        # For adjacency, loosen constraints for likely continuations
         if allow_adjacent:
-            # Allow adjacency merges for obvious continuations like multi-token names/addresses.
-            return self._is_name_type(incoming_type) or self._is_address_type(incoming_type)
+            if incoming_type in fused.all_types:
+                return True
+            if self._is_name_type(incoming_type):
+                return True
+            if self._is_address_type(incoming_type):
+                return True
+            if self._is_numeric_type(incoming_type) and any(
+                self._is_numeric_type(t) for t in fused.all_types
+            ):
+                return True
+            return False
 
+        # Categories disagree -> do not merge
         if fused_cats and incoming_cat and incoming_cat not in fused_cats:
             return False
 
-        # Only merge conflicting types if there is meaningful overlap.
-        union = (fused.end - fused.start) + (incoming.end - incoming.start) - overlap
-        iou = overlap / union if union > 0 else 0.0
+        # Only merge conflicting types if there is meaningful overlap
+        fused_len = max(0, fused.end - fused.start)
+        incoming_len = max(0, incoming.end - incoming.start)
+        union = fused_len + incoming_len - max(0, overlap)
+        iou = (overlap / union) if union > 0 else 0.0
+
         return iou >= self.MIN_IOU_FOR_MISMATCHED_TYPES
 
+    # ---------------------------------------------------------------------
+    # Merge & scoring
+    # ---------------------------------------------------------------------
     def _merge_into(self, fused: FusedSpan, incoming: DetectorResult) -> None:
+        """
+        Merge incoming DetectorResult into an existing FusedSpan.
+        Expands boundaries, updates type resolution and confidence, and records metadata.
+        """
         before = (fused.start, fused.end, fused.pii_type, float(fused.confidence))
+
+        # Expand boundaries to cover both spans
         fused.start = min(fused.start, incoming.start)
         fused.end = max(fused.end, incoming.end)
+
+        # Add evidence
         fused.add_source(incoming)
 
+        # Re-score types based on detector weights and scores
         type_scores = self._score_types(fused.sources)
-        best_type = max(
-            type_scores,
-            key=lambda t: (type_scores[t], self.TYPE_PRIORITY.get(t, priority_for_type(t, 0))),
-        )
+
+        # Deterministic type resolution:
+        # 1. Max aggregated score
+        # 2. Explicit type priority map (or taxonomy priority)
+        def _type_rank(t: str) -> tuple[float, int]:
+            score = type_scores.get(t, 0.0)
+            priority = self.TYPE_PRIORITY.get(t, priority_for_type(t, 0))
+            return (score, priority)
+
+        best_type = max(type_scores, key=_type_rank)
         fused.pii_type = best_type
-        fused.category = fused.category or category_for_type(fused.pii_type)
+
+        # Ensure category is synced with final type
+        try:
+            fused.category = fused.category or category_for_type(fused.pii_type)
+        except Exception as e:
+            LOG.error(f"Failed to infer category for fused type {fused.pii_type}: {e}")
+
         if fused.category:
             fused.all_categories.add(fused.category)
+
+        # Aggregate confidence across detectors
         fused.confidence = self._aggregate_confidence(fused)
+
+        if fused.detector_scores:
+            fused.max_confidence = max(fused.detector_scores.values())
+
+        # Enrich metadata for downstream introspection/debugging
         fused.metadata["all_types"] = sorted(fused.all_types)
         fused.metadata["all_categories"] = sorted(c for c in fused.all_categories if c)
         fused.metadata["detectors"] = sorted(fused.detectors)
@@ -171,7 +282,7 @@ class FusionEngine:
             log_decision(
                 detector_name="fusion",
                 action="merge",
-                text_window="",
+                text_window="",  # can be populated with context if needed
                 span_before=(before[0], before[1]),
                 span_after=(fused.start, fused.end),
                 score=fused.confidence,
@@ -184,35 +295,70 @@ class FusionEngine:
             )
 
     def _score_types(self, sources: Sequence[DetectorResult]) -> dict[str, float]:
+        """
+        Compute a score per pii_type based on detector weights and per-detector confidence.
+        """
         scores: dict[str, float] = {}
         for src in sources:
-            weight = self.detector_weights.get(src.detector_name, 1.0)
+            weight = float(self.detector_weights.get(src.detector_name, 1.0))
             score_val = getattr(src, "score", None)
-            score = float(score_val if score_val is not None else src.confidence) * weight
-            scores[src.pii_type] = max(scores.get(src.pii_type, 0.0), score)
+            try:
+                base_score = float(score_val) if score_val is not None else float(src.confidence)
+            except Exception:
+                LOG.warning(
+                    f"Non-numeric score/confidence from detector {src.detector_name}; defaulting to 0.0"
+                )
+                base_score = 0.0
+
+            effective = base_score * weight
+            prev = scores.get(src.pii_type, 0.0)
+            # Use max to reflect strongest evidence for each type
+            scores[src.pii_type] = max(prev, effective)
         return scores
 
     def _aggregate_confidence(self, span: FusedSpan) -> float:
-        detector_scores = sorted(span.detector_scores.values(), reverse=True)
-        if not detector_scores:
+        """
+        Aggregate confidence across detectors for a fused span.
+        Uses the strongest detector as base, with a small bonus per additional detector.
+        """
+        if not span.detector_scores:
             return 0.0
+
+        detector_scores = sorted(span.detector_scores.values(), reverse=True)
         base = detector_scores[0]
         bonus = self.SCORE_BONUS_PER_DETECTOR * max(0, len(span.detectors) - 1)
-        return min(1.0, base + bonus)
+        return float(min(1.0, max(0.0, base + bonus)))
 
+    # ---------------------------------------------------------------------
+    # Finalization & context extraction
+    # ---------------------------------------------------------------------
     def _finalize_span(self, span: FusedSpan, text: str | None, bucket: list[FusedSpan]) -> None:
+        """
+        Finalize a span before returning it:
+        - Optionally trim boundaries to token/regex-safe limits.
+        - Populate left/right context windows for severity and policy.
+        """
         if text is not None:
             start, end, sliced = trim_span(text, span.start, span.end)
             span.start, span.end, span.text = start, end, sliced
-            span.left_context = text[max(0, start - self.context_window) : start]
-            span.right_context = text[end : min(len(text), end + self.context_window)]
+
+            left_start = max(0, start - self.context_window)
+            right_end = min(len(text), end + self.context_window)
+
+            span.left_context = text[left_start:start]
+            span.right_context = text[end:right_end]
+
         bucket.append(span)
 
+    # ---------------------------------------------------------------------
+    # Type helpers
+    # ---------------------------------------------------------------------
     def _is_name_type(self, pii_type: str) -> bool:
-        return pii_type in self.NAME_TYPES or pii_type.upper().startswith("PERSON")
+        t = pii_type.upper()
+        return t in self.NAME_TYPES or t.startswith("PERSON")
 
     def _is_address_type(self, pii_type: str) -> bool:
-        return pii_type in self.ADDRESS_TYPES
+        return pii_type.upper() in self.ADDRESS_TYPES
 
     def _is_numeric_type(self, pii_type: str) -> bool:
-        return pii_type in self.NUMERIC_TYPES
+        return pii_type.upper() in self.NUMERIC_TYPES
