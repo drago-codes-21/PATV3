@@ -1,0 +1,10 @@
+artifacts_dir: pat/cip/artifacts
+calibration_data: data/span_training.jsonl
+enable_calibration: false
+e2e_corpus: data/e2e.jsonl
+training_data: data/span_training.jsonl
+drift_features: artifacts/span_features.jsonl
+drift_train_stats: artifacts/span_training_stats.json
+drift_threshold: 0.15
+enable_debug_subset: false
+debug_subset_limit: 20

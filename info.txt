@@ -1,0 +1,1 @@
+python -m pat.pipeline.run --input samples/input.txt --output samples/sanitized.txt --severity-model artifacts/span_severity_model.joblib --policy-config pat/config/policy_rules.json --debug

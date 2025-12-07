@@ -1,0 +1,74 @@
+jurisdiction: "UK"
+regulations:
+  - "UK_GDPR"
+  - "FCA"
+severity_thresholds:
+  LOW: [0.0, 0.2]
+  MEDIUM: [0.2, 0.6]
+  HIGH: [0.6, 0.85]
+  VERY_HIGH: [0.85, 1.0]
+rules:
+  - id: "mask_critical_financial"
+    description: "Mask content with critical severity containing bank account or sort code."
+    conditions:
+      min_severity: "VERY_HIGH"
+      pii_types_any: ["BANK_ACCOUNT", "SORT_CODE", "CARD_NUMBER"]
+    action:
+      type: "MASK"
+      mask_char: "*"
+
+  - id: "mask_high_financial_pii"
+    description: "Mask financial PII for high severity outbound content."
+    conditions:
+      min_severity: "HIGH"
+      channel_any: ["EMAIL_OUTBOUND", "CHAT_OUTBOUND"]
+    action:
+      type: "MASK"
+      placeholder: "<FINANCIAL>"
+      mask_pii_types: ["BANK_ACCOUNT", "SORT_CODE", "CARD_NUMBER"]
+
+  - id: "mask_medium_financial_pii"
+    description: "Mask financial identifiers at medium severity and above."
+    conditions:
+      min_severity: "MEDIUM"
+      pii_types_any: ["BANK_ACCOUNT", "SORT_CODE", "CARD_NUMBER"]
+    action:
+      type: "MASK"
+      placeholder: "<FINANCIAL>"
+      mask_pii_types: ["BANK_ACCOUNT", "SORT_CODE", "CARD_NUMBER"]
+
+  - id: "mask_credentials_medium"
+    description: "Always mask credentials at medium severity and above."
+    conditions:
+      min_severity: "MEDIUM"
+      pii_types_any: ["CREDENTIAL"]
+    action:
+      type: "MASK"
+      placeholder: "<CREDENTIAL>"
+      mask_pii_types: ["CREDENTIAL"]
+
+  - id: "mask_contact_high"
+    description: "Mask email and phone numbers at high severity."
+    conditions:
+      min_severity: "HIGH"
+      pii_types_any: ["EMAIL", "PHONE"]
+    action:
+      type: "MASK"
+      placeholder: "<CONTACT>"
+      mask_pii_types: ["EMAIL", "PHONE"]
+
+  - id: "allow_low_light_pii"
+    description: "Allow low severity content with benign identifiers."
+    conditions:
+      max_severity: "LOW"
+      pii_types_all: ["PERSON"]
+    action:
+      type: "ALLOW"
+
+  - id: "allow_reference_codes"
+    description: "Allow benign reference/ticket/invoice codes."
+    conditions:
+      pii_types_any: ["GENERIC_NUMBER"]
+    action:
+      type: "ALLOW"
+    keywords_any: ["reference", "ticket", "invoice", "inv-"]
