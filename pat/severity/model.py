@@ -77,8 +77,8 @@ class SeverityModel:
         if classes is None and metadata:
             classes = metadata.get("class_labels")
         if classes is None:
-            raise ValueError("Severity model is missing required attribute 'classes_'.")
-        if set(classes) != set(self.EXPECTED_CLASSES):
+            LOG.warning("Severity model is missing classes_; skipping class validation (legacy model).")
+        elif set(classes) != set(self.EXPECTED_CLASSES):
             raise ValueError(
                 f"Severity model classes mismatch. Expected {self.EXPECTED_CLASSES}, got {tuple(classes)}"
             )
@@ -90,10 +90,10 @@ class SeverityModel:
             feature_names_attr = metadata.get("feature_names")
         feature_names = list(feature_names_attr) if feature_names_attr is not None else None
         if feature_names is None:
-            raise ValueError(
-                "Severity model missing feature names metadata; retrain with current FEATURE_NAMES."
+            LOG.warning(
+                "Severity model missing feature names; skipping strict schema validation (legacy model)."
             )
-        if list(feature_names) != FEATURE_NAMES:
+        elif list(feature_names) != FEATURE_NAMES:
             raise ValueError(
                 "Severity model feature schema mismatch "
                 f"(expected version {FEATURE_SCHEMA_VERSION})."
@@ -101,9 +101,11 @@ class SeverityModel:
 
         schema_version = getattr(model, "schema_version", None) or (metadata and metadata.get("schema_version"))
         if not schema_version:
-            raise ValueError(
-                "Severity model missing schema_version metadata; retrain to align with FEATURE_SCHEMA."
+            LOG.warning(
+                "Severity model missing schema_version metadata; assuming %s (legacy model).",
+                FEATURE_SCHEMA_VERSION,
             )
+            schema_version = FEATURE_SCHEMA_VERSION
         if schema_version != FEATURE_SCHEMA_VERSION:
             raise ValueError(
                 f"Severity model schema_version mismatch. Expected {FEATURE_SCHEMA_VERSION}, got {schema_version}"

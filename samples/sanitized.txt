@@ -1,9 +1,9 @@
 Hi <PERSON>,
 
-Please process the refund to this card: 4485 9932 1184 2231 and update my record with the new address:
-27 Willow Rise, <ADDRESS>.
+Please process the refund to this card: <FINANCIAL> and update my record with the new address:
+27 Willow Rise, <PERSON>DRESS>.
 
-Also, my NHS number is <CONTACT>needed.
+Also, my NHS number is <GOV_ID> if needed.
 
 Thanks,  
 <PERSON>

@@ -246,12 +246,21 @@ def extract_span_features(
     span_text = span.text or text[span.start : span.end]
     span_length = len(span_text)
 
-    # The `span.sources` is a sequence of detector name strings.
-    detectors = list(getattr(span, "detectors", [])) or list(span.sources or [])
+    # Normalise detectors/sources to string names
+    raw_sources = list(getattr(span, "detectors", [])) or list(getattr(span, "sources", []) or [])
+    detectors = []
+    for src in raw_sources:
+        if isinstance(src, str):
+            detectors.append(src)
+        elif hasattr(src, "detector_name"):
+            detectors.append(getattr(src, "detector_name"))
+        else:
+            detectors.append(str(src))
+
     # The individual detector scores are lost in fusion; we can only create a map using the max_confidence.
-    scores_map = getattr(span, "detector_scores", {}) or {s: span.max_confidence for s in span.sources or []}
+    scores_map = getattr(span, "detector_scores", {}) or {name: span.max_confidence for name in detectors}
     detector_scores = list(scores_map.values()) or [span.max_confidence]
-    for source_name in span.sources or []:
+    for source_name in detectors:
         feature_name = SOURCE_FEATURES.get(source_name, "")
         if feature_name in features:
             features[feature_name] = 1.0

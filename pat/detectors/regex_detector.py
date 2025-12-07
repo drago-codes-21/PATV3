@@ -108,7 +108,7 @@ class RegexDetector(BaseDetector):
 
                 # skip allowlisted fragments (contains OR exact)
                 lowered_span = span_text.lower()
-                if any(lit.lower() in lowered_span for lit in ALLOWED_LITERALS):
+                if span_text in ALLOWED_LITERALS or any(lit.lower() in lowered_span for lit in ALLOWED_LITERALS):
                     continue
 
                 # keyword gating

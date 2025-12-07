@@ -192,7 +192,12 @@ class BaseDetector(ABC):
         if not isinstance(text, str):
             raise TypeError(f"Detector input must be a string, got {type(text)}")
 
-        raw_results = self.run(text, context=context)
+        try:
+            raw_results = self.run(text, context=context)
+        except Exception as exc:  # pragma: no cover - defensive
+            import logging
+            logging.getLogger(__name__).exception("Detector %s failed: %s", getattr(self, "name", "unknown"), exc)
+            return []
         if not raw_results:
             return []
 

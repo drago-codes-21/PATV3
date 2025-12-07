@@ -345,7 +345,7 @@ class SpanDatasetBuilder:
     def _run_detectors(self, text: str) -> tuple[FusedSpan, ...]:
         assert self.runner and self.fusion
         results = self.runner.run(text)
-        fused = self.fusion.fuse(results, text)
+        fused = self.fusion.fuse(results, text=text)
         return tuple(fused)
 
     def _match_detector_span(
