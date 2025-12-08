@@ -25,7 +25,7 @@
     {
       "id": "financial_any",
       "description": "Mask all financial identifiers with a consistent placeholder.",
-      "pii_types": ["BANK_ACCOUNT", "IBAN", "CARD_NUMBER", "SORT_CODE", "CUSTOMER_ID", "TRANSACTION_ID"],
+      "pii_types": ["BANK_ACCOUNT", "IBAN", "CARD_NUMBER", "SORT_CODE", "TRANSACTION_ID"],
       "severity_at_least": "LOW",
       "action": {
         "decision": "MASK",
@@ -33,6 +33,20 @@
         "mask_args": { "placeholder": "<FINANCIAL>" }
       },
       "priority": 95,
+      "enabled": true
+    },
+
+    {
+      "id": "customer_identifiers",
+      "description": "Mask customer/loyalty identifiers separately from financial data.",
+      "pii_types": ["CUSTOMER_ID"],
+      "severity_at_least": "LOW",
+      "action": {
+        "decision": "MASK",
+        "mask_strategy": "placeholder",
+        "mask_args": { "placeholder": "<CUSTOMER_ID>" }
+      },
+      "priority": 94,
       "enabled": true
     },
 
@@ -75,6 +89,20 @@
         "mask_args": { "placeholder": "<MEDICAL_INFO>" }
       },
       "priority": 92,
+      "enabled": true
+    },
+
+    {
+      "id": "dob_and_dates",
+      "description": "Mask dates of birth or explicit dates when severity is HIGH or above.",
+      "pii_types": ["DATE"],
+      "severity_at_least": "HIGH",
+      "action": {
+        "decision": "MASK",
+        "mask_strategy": "placeholder",
+        "mask_args": { "placeholder": "<DATE>" }
+      },
+      "priority": 85,
       "enabled": true
     },
 

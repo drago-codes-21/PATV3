@@ -87,7 +87,7 @@ def is_gb_iban_valid(match: re.Match) -> bool:
 # ---------------------------------------------------------------------------
 
 def is_nino_valid(match: re.Match) -> bool:
-    nino = _extract_group(match).upper()
+    nino = re.sub(r"\s", "", _extract_group(match)).upper()
     if len(nino) != 9:
         return False
     # Accept "QQ" prefix for synthetic test numbers
@@ -182,21 +182,34 @@ def is_password_like(match: re.Match) -> bool:
 # ---------------------------------------------------------------------------
 
 def is_date_valid(match: re.Match) -> bool:
-    text = _extract_group(match)
+    text = _extract_group(match).strip()
     parts = re.split(r"[/-]", text)
-
     if len(parts) != 3:
         return False
 
     try:
-        d, m, y = map(int, parts)
+        nums = [int(p) for p in parts]
     except Exception:
         return False
 
-    if not (1 <= d <= 31 and 1 <= m <= 12 and 0 <= y <= 9999):
-        return False
+    def _valid(dm: tuple[int, int, int]) -> bool:
+        d, m, y = dm
+        if not (1 <= d <= 31 and 1 <= m <= 12 and 0 <= y <= 9999):
+            return False
+        # Basic guard against years that are obviously not dates (e.g., 4000+ unless ISO).
+        if y < 50:
+            y = 2000 + y
+        return 1800 <= y <= 2100
 
-    return True
+    # Handle ISO (YYYY-MM-DD) vs D/M/Y layouts
+    if len(parts[0]) == 4:
+        candidate = (nums[2], nums[1], nums[0])
+    elif len(parts[2]) == 4 or nums[2] > 31:
+        candidate = (nums[0], nums[1], nums[2])
+    else:
+        candidate = (nums[0], nums[1], nums[2])
+
+    return _valid(candidate)
 
 
 # ---------------------------------------------------------------------------

@@ -1,9 +1,166 @@
-Hi Maria Collins,
+﻿Subject: Severity Calibration – Mixed Risk PII & Operational Data
 
-Please process the refund to this card: 4485 9932 1184 2231 and update my record with the new address:
-27 Willow Rise, Manchester M14 6PX.
+Hi team,
 
-Also, my NHS number is 943 128 5592 if needed.
+This sample document is for validating PAT’s severity model and policy rules. It intentionally mixes:
+- Very high risk PII (card numbers, bank accounts, NI, passports, credentials, health, DOB),
+- Medium risk PII (emails, phones, addresses, IPs),
+- Low risk or borderline items (user IDs, last4, city-only, IPs in some contexts),
+- Purely non-PII numeric counters, SKUs, experiment IDs, etc.
 
-Thanks,  
-Jonathan Reed
+After sanitization, the output should:
+- Aggressively mask VERY_HIGH/HIGH items,
+- Be conservative but not overkill on MEDIUM,
+- Leave LOW/non-PII values intact.
+
+---------------------------------------------------
+[1] CUSTOMER SUPPORT THREAD – PAYMENT & CONTACT
+---------------------------------------------------
+
+From: Daniel Harris <daniel.harris@example.com>
+To: help@megashop.co.uk
+Date: 2024-10-15 09:41:23
+
+Hi,
+
+I was double-charged on my order ORDER-2024-10-15-000987. The correct amount was £42.99 but I see two charges on my bank statement.
+
+The card I used ends with 4411, but the full number you previously had on file was:
+  4111 1111 1111 4444 (exp 06/27, CVV 123)
+
+My billing address is:
+
+27 Maple Crescent,
+Flat 4B,
+Leeds LS2 3AB,
+United Kingdom.
+
+My current email is daniel.harris@example.com and backup email is d.harris84@oldmail.net.
+You can reach me on +44 7700 900333.
+
+Please make sure no full card numbers appear in your logs going forward. Last 4 digits are fine if you need them for support.
+
+Thanks,
+Daniel
+
+---------------------------------------------------
+[2] CRM EXPORT – IDs, NUMERIC FIELDS, GOV INFO
+---------------------------------------------------
+
+System: CRM_MASTER_EU
+Exported by: "Anna Keller" <anna.keller@megashop.de>
+Export time: 2024-10-16T11:05:01Z
+
+Customer Name: "Sofia Martinez"
+Customer Display ID: CUST-00071234
+Legacy Numeric ID: 99384711
+Loyalty ID: LOY-2024-000099
+
+Primary email: sofia.martinez@corporate-bank.es
+Secondary email: sm.personal82@gmail.com
+Mobile: +34 612 345 678
+
+Postal Address:
+Calle Mayor 18, 3ºB
+28013 Madrid
+Spain
+
+Banking info (should be VERY_HIGH severity):
+- Sort code (UK legacy): 40-51-62
+- Account number (UK legacy): 00334455
+- IBAN (current): ES91 2100 0418 4502 0005 1332
+- Old card (archived): 5555 4444 3333 2222, exp 04/25
+
+Government info (HIGH/VERY_HIGH):
+- National Insurance (UK, old job): QQ 66 77 88 C
+- Spanish Tax ID (NIF): 12345678Z
+- Passport: AA0492337
+
+Low / medium severity identifiers that should ideally remain:
+- User handle: sofia_mz_82
+- Internal analytics ID: ANALYTICS-USER-00991
+- Segment label: SEGMENT_HI_VALUE_2024
+
+---------------------------------------------------
+[3] SECURITY INCIDENT – SECRETS, LOG DATA
+---------------------------------------------------
+
+Incident ID: SEC-2024-10-17-API-LEAK
+Created by: "Rahul Singh" <rahul.singh@megashop.io>
+
+Summary:
+A debug build accidentally logged live credentials and tokens. These are all rotated but must be scrubbed from logs.
+
+Leaked environment variables:
+- PAYMENT_API_KEY="sk_live_9876543210abcdefghijkl"
+- PAYMENT_TEST_KEY="sk_test_1234567890abcdefghi"
+- DB_URL="postgres://api_user:S3cretPass!!@10.1.2.3:5432/payments"
+- REDIS_PASSWORD="CachePass2024!"
+- JWT_SIGNING_SECRET="super-long-jwt-secret-value-that-should-never-be-logged"
+
+Example log lines:
+
+2024-10-17T07:12:44Z DEBUG /api/charge
+user_id=99384711
+email="guest_2024_01@example.com"
+ip="198.51.100.23"
+card_last4="4444"
+amount=42.99
+currency="GBP"
+
+2024-10-17T07:12:45Z DEBUG /api/verify-id
+payload={"full_name": "Emily Johnson", "dob": "1991-06-12", "national_id": "QQ 11 22 33 A"}
+
+Notes:
+- Full secrets (API keys, passwords, DB URL with password, JWT secret) should be VERY_HIGH and fully masked.
+- card_last4 alone should be LOW or MEDIUM (policy may allow it).
+- dob and national_id should be HIGH/VERY_HIGH.
+
+---------------------------------------------------
+[4] HR & HEALTH – VERY HIGH RISK
+---------------------------------------------------
+
+Document: "CONFIDENTIAL – Occupational Health Summary"
+HR Owner: "Karen O'Neill" <karen.oneill@megashop.co.uk>
+
+Employee: "James Robertson"
+Employee ID: EMP-00421
+Role: Senior Site Reliability Engineer
+Work Email: james.robertson@megashop.co.uk
+Personal Email: j.robertson1987@gmail.com
+Home Address: 19 Oakfield Road, Bristol BS3 2AA, UK
+Emergency Contact: Maria Robertson, +44 7700 811999
+
+Employment details:
+- National Insurance: QQ 22 33 44 B
+- Driving Licence: ROBEJ912345RJ8CD
+- Passport: 782993441
+- Date of birth: 1987-03-21
+- Start date: 2020-09-01
+
+Health notes (should be VERY_HIGH):
+- Long-term diagnosis of type 1 diabetes.
+- 2023-04-11: Employee reported episodes of severe anxiety and insomnia.
+- 2024-01-18: Occupational health recommended reduced night shifts due to panic attacks.
+- 2024-06-30: Employee requested temporary remote work period following depressive episode.
+
+These notes must not leak in plaintext; any health-related conditions should be strongly masked.
+
+---------------------------------------------------
+[5] CHAT & FREE-TEXT – MIXED SEVERITY
+---------------------------------------------------
+
+Chat ID: CHAT-2024-10-17-EN-441
+Channel: Mobile in-app chat
+
+Agent (Priya): "Hi Mark, before I can change your delivery, can you confirm your full name, date of birth, and postcode?"
+Customer (Mark): "Sure, it’s Mark Andrew Lewis, DOB 14/08/1990, and my postcode is EH3 9NF."
+Agent: "Thanks, I see your old address as 11 Burnside Lane, Edinburgh EH3 8AB and phone +44 7700 900777. Is that still correct?"
+Customer: "Yes, please also update my email to mark.a.lewis90@newmail.com and remove the old one mark.lewis@example.org."
+
+Later in the chat:
+Customer: "I once saw my full card number 5200 1234 5678 9999 in the error message. That should never happen. Last 4 like 9999 is fine."
+
+---------------------------------------------------
+[6] ANALYTICS, COUNTERS, AND SAFE IDs (SHOULD BE LOW/NON-PII)
+------------------------------------

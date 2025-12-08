@@ -193,6 +193,9 @@ class MLTokenClassifierDetector(BaseDetector):
             # Length guard: avoid emitting absurdly short or long spans.
             if len(adj_text) < 3 or len(adj_text) > 64:
                 continue
+            # Avoid mislabeling numeric counters/IDs as dates.
+            if pii_type == "DATE" and adj_text.isdigit():
+                continue
 
             key = (adj_start, adj_end, pii_type)
             if key in seen:

@@ -247,6 +247,7 @@
     "EVENT_CHECKIN": "<EVENT_CHECKIN>",
     "ACTIVITY_PATTERN": "<ACTIVITY_PATTERN>",
 
-    "GOV_ID": "<GOV_ID>"
+    "GOV_ID": "<GOV_ID>",
+    "DATE": "<DATE>"
   }
 }

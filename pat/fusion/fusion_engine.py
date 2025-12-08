@@ -131,8 +131,9 @@ class FusionEngine:
 
         self._finalize_span(current_span, text, fused_spans)
 
-        # Ensure deterministic ordering of final spans
+        # Ensure deterministic ordering of final spans and drop overlaps defensively.
         fused_spans.sort(key=lambda fs: (fs.start, fs.end))
+        fused_spans = self._deduplicate_overlaps(fused_spans)
         return fused_spans
 
     # ---------------------------------------------------------------------
@@ -200,13 +201,13 @@ class FusionEngine:
         ):
             return True
 
-        # For adjacency, loosen constraints for likely continuations
+        # For adjacency, only merge when both spans belong to the same semantic family.
         if allow_adjacent:
             if incoming_type in fused.all_types:
                 return True
-            if self._is_name_type(incoming_type):
+            if self._is_name_type(incoming_type) and any(self._is_name_type(t) for t in fused.all_types):
                 return True
-            if self._is_address_type(incoming_type):
+            if self._is_address_type(incoming_type) and any(self._is_address_type(t) for t in fused.all_types):
                 return True
             if self._is_numeric_type(incoming_type) and any(
                 self._is_numeric_type(t) for t in fused.all_types
@@ -349,6 +350,97 @@ class FusionEngine:
             span.right_context = text[end:right_end]
 
         bucket.append(span)
+
+    def _deduplicate_overlaps(self, spans: list[FusedSpan]) -> list[FusedSpan]:
+        """
+        Enforce non-overlapping spans. When spans overlap we preserve coverage by
+        splitting/triming rather than blindly discarding spans. Preference order:
+        higher type priority -> higher confidence -> longer coverage.
+        """
+        if not spans:
+            return []
+
+        resolved: list[FusedSpan] = []
+
+        def _rank(span: FusedSpan) -> tuple[int, float, int]:
+            priority = self.TYPE_PRIORITY.get(span.pii_type, priority_for_type(span.pii_type, 0))
+            confidence = float(getattr(span, "confidence", 0.0) or 0.0)
+            length = max(0, span.end - span.start)
+            return (priority, confidence, length)
+
+        for span in spans:
+            if not resolved:
+                resolved.append(span)
+                continue
+
+            last = resolved[-1]
+            if span.start >= last.end:
+                resolved.append(span)
+                continue
+
+            last_rank = _rank(last)
+            span_rank = _rank(span)
+
+            # Case 1: incoming span fully contained within last.
+            if span.end <= last.end:
+                if span_rank > last_rank:
+                    # Keep left chunk of last (if any), then the stronger incoming span.
+                    if last.start < span.start:
+                        resolved[-1] = self._trim_span_copy(last, last.start, span.start) or last
+                        resolved.append(span)
+                    else:
+                        resolved[-1] = span
+                # otherwise keep existing last and drop incoming.
+                continue
+
+            # Case 2: incoming span extends beyond last.
+            if span_rank >= last_rank:
+                # Preserve left part of last to avoid gaps, then append stronger span.
+                if last.start < span.start:
+                    trimmed = self._trim_span_copy(last, last.start, span.start)
+                    resolved[-1] = trimmed or last
+                else:
+                    resolved.pop()
+                resolved.append(span)
+            else:
+                # Keep last, but still cover the tail of the incoming span to avoid missed PII.
+                tail = self._trim_span_copy(span, last.end, span.end)
+                if tail:
+                    resolved.append(tail)
+
+        return resolved
+
+    def _trim_span_copy(self, span: FusedSpan, new_start: int, new_end: int) -> FusedSpan | None:
+        """Return a shallow copy of span trimmed to [new_start, new_end)."""
+        new_start = max(span.start, new_start)
+        new_end = min(span.end, new_end)
+        if new_end <= new_start:
+            return None
+
+        offset_start = max(0, new_start - span.start)
+        offset_end = offset_start + (new_end - new_start)
+        trimmed_text = span.text[offset_start:offset_end]
+
+        return FusedSpan(
+            start=new_start,
+            end=new_end,
+            text=trimmed_text,
+            pii_type=span.pii_type,
+            confidence=span.confidence,
+            category=span.category,
+            all_types=set(span.all_types),
+            all_categories=set(span.all_categories),
+            detectors=set(span.detectors),
+            detector_scores=dict(span.detector_scores),
+            sources=list(span.sources),
+            metadata=dict(span.metadata),
+            left_context=span.left_context,
+            right_context=span.right_context,
+            max_confidence=span.max_confidence,
+            severity_score=span.severity_score,
+            severity_label=span.severity_label,
+            severity_probs=span.severity_probs,
+        )
 
     # ---------------------------------------------------------------------
     # Type helpers

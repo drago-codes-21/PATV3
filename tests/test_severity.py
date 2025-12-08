@@ -41,7 +41,10 @@ def test_severity_model_predicts_score(tmp_path: Path):
     """Verify the SeverityModel loads a model and returns a float score."""
     # Create a dummy model that always predicts class 1 (HIGH/VERY_HIGH)
     dummy_sklearn_model = LogisticRegression()
-    dummy_sklearn_model.fit(np.array([[0.0] * len(FEATURE_NAMES)]), [1])
+    dummy_sklearn_model.fit(
+        np.array([[0.0] * len(FEATURE_NAMES), [1.0] * len(FEATURE_NAMES)]),
+        [0, 1],
+    )
     model_path = tmp_path / "dummy_model.joblib"
     joblib.dump(dummy_sklearn_model, model_path)
 

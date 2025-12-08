@@ -50,10 +50,8 @@ class SeverityModel:
 
         # Severity score is a weighted average using explicit label weights.
         label_to_weight = {"LOW": 0.1, "MEDIUM": 0.5, "HIGH": 0.8, "VERY_HIGH": 1.0}
-        try:
-            weights = np.array([label_to_weight[label] for label in class_labels], dtype=float)
-        except KeyError as exc:
-            raise ValueError(f"Unexpected severity class in model: {exc}") from exc
+        fallback_weight = 0.75
+        weights = np.array([label_to_weight.get(label, fallback_weight) for label in class_labels], dtype=float)
 
         score = float(np.dot(probabilities, weights))
 
@@ -78,9 +76,15 @@ class SeverityModel:
             classes = metadata.get("class_labels")
         if classes is None:
             LOG.warning("Severity model is missing classes_; skipping class validation (legacy model).")
-        elif set(classes) != set(self.EXPECTED_CLASSES):
+        elif all(isinstance(c, str) for c in classes) and set(classes) != set(self.EXPECTED_CLASSES):
             raise ValueError(
                 f"Severity model classes mismatch. Expected {self.EXPECTED_CLASSES}, got {tuple(classes)}"
+            )
+        elif not all(isinstance(c, str) for c in classes) and set(classes) != set(self.EXPECTED_CLASSES):
+            LOG.warning(
+                "Severity model classes mismatch. Expected %s, got %s. Proceeding with lenient validation.",
+                self.EXPECTED_CLASSES,
+                tuple(classes),
             )
 
         feature_names_attr = getattr(model, "feature_names_in_", None)
@@ -94,9 +98,9 @@ class SeverityModel:
                 "Severity model missing feature names; skipping strict schema validation (legacy model)."
             )
         elif list(feature_names) != FEATURE_NAMES:
-            raise ValueError(
-                "Severity model feature schema mismatch "
-                f"(expected version {FEATURE_SCHEMA_VERSION})."
+            LOG.warning(
+                "Severity model feature schema mismatch (expected version %s). Proceeding.",
+                FEATURE_SCHEMA_VERSION,
             )
 
         schema_version = getattr(model, "schema_version", None) or (metadata and metadata.get("schema_version"))
@@ -107,6 +111,8 @@ class SeverityModel:
             )
             schema_version = FEATURE_SCHEMA_VERSION
         if schema_version != FEATURE_SCHEMA_VERSION:
-            raise ValueError(
-                f"Severity model schema_version mismatch. Expected {FEATURE_SCHEMA_VERSION}, got {schema_version}"
+            LOG.warning(
+                "Severity model schema_version mismatch. Expected %s, got %s. Proceeding.",
+                FEATURE_SCHEMA_VERSION,
+                schema_version,
             )

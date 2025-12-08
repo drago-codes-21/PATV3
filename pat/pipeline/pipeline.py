@@ -26,34 +26,95 @@ LOG = logging.getLogger(__name__)
 
 
 def _apply_redactions(text: str, decisions: list[PolicyDecision]) -> str:
-    """Apply redaction decisions to text safely."""
-    # Sort decisions by start index, descending, to avoid index shifting issues.
-    sorted_decisions = sorted(decisions, key=lambda d: d.span.start, reverse=True)
-    sanitized_text = text
+    """Apply redaction decisions to text in a single, offset-safe pass."""
 
-    for decision in sorted_decisions:
+    def _severity_rank(label: str | None) -> int:
+        order = {"VERY_HIGH": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
+        return order.get(label or "", 1)
+
+    actionable = [
+        d for d in decisions if d.action in {"MASK", "BLOCK"} and d.span.start < d.span.end
+    ]
+    if not actionable:
+        return text
+
+    # Sort by start position ascending for deterministic left-to-right construction.
+    actionable.sort(key=lambda d: (d.span.start, d.span.end))
+
+    instructions: list[dict[str, object]] = []
+    for decision in actionable:
         span = decision.span
         start, end = span.start, span.end
-
-        if decision.action == "ALLOW":
+        if start >= len(text):
             continue
-
-        if decision.action == "BLOCK":
-            # In a real service, this would raise an exception to be caught by a framework.
-            # For this implementation, we'll log and mask.
-            LOG.error("BLOCK action triggered by rule %s. Masking content.", decision.rule_id)
+        end = min(end, len(text))
+        if start >= end:
+            continue
 
         replacement = decision.masked_text or decision.placeholder
         if replacement is None:
-            # If a MASK/BLOCK action has no placeholder, it's a policy misconfiguration.
-            # We provide a sensible default instead of failing.
-            replacement = f"[{span.pii_type}]"
-        if start < 0 or end > len(sanitized_text) or start > end:
-            LOG.warning("Skipping invalid span application: %s", decision)
-            continue
-        sanitized_text = sanitized_text[:start] + replacement + sanitized_text[end:]
+            replacement = f"<{span.pii_type}>"
 
-    return sanitized_text
+        rank = (
+            _severity_rank(decision.severity_label or getattr(span, "severity_label", None)),
+            1 if decision.action == "MASK" else 2,  # BLOCK outranks MASK if present
+            end - start,
+            float(getattr(span, "confidence", 0.0) or 0.0),
+        )
+
+        instr = {"start": start, "end": end, "replacement": replacement, "rank": rank}
+
+        if not instructions:
+            instructions.append(instr)
+            continue
+
+        last = instructions[-1]
+        last_start, last_end = int(last["start"]), int(last["end"])
+
+        if start >= last_end:
+            instructions.append(instr)
+            continue
+
+        # Overlap handling: prefer higher-ranked decision, but preserve coverage.
+        if rank > last["rank"]:  # type: ignore[index]
+            # Preserve the left non-overlapping part of the previous instruction.
+            if last_start < start:
+                last["end"] = start
+            else:
+                instructions.pop()
+            instructions.append(instr)
+        else:
+            # Keep existing instruction; if incoming extends beyond last_end, cover the tail.
+            if end > last_end:
+                tail = dict(instr)
+                tail["start"] = last_end
+                tail["end"] = end
+                instructions.append(tail)
+
+    # Drop any zero-length artifacts from overlap trimming.
+    instructions = [i for i in instructions if int(i["end"]) > int(i["start"])]
+
+    # Build sanitized text in a single pass.
+    sanitized_parts: list[str] = []
+    cursor = 0
+    for instr in instructions:
+        start, end, replacement = int(instr["start"]), int(instr["end"]), str(instr["replacement"])
+        if start < cursor:
+            continue  # Defensive guard against malformed overlaps
+
+        # Skip re-masking already-placeholder text.
+        segment = text[start:end]
+        segment_stripped = segment.strip()
+        if segment_stripped.startswith("<") and segment_stripped.endswith(">") and segment_stripped == replacement:
+            cursor = end
+            continue
+
+        sanitized_parts.append(text[cursor:start])
+        sanitized_parts.append(replacement)
+        cursor = end
+
+    sanitized_parts.append(text[cursor:])
+    return "".join(sanitized_parts)
 
 
 class RedactionPipeline:

@@ -137,6 +137,17 @@ class NERDetector(BaseDetector):
             if not adj_text:
                 continue
 
+            if adj_text.lower() in {"git", "repo", "github", "bitbucket"}:
+                continue
+
+            # Skip all-caps headings to reduce over-masking of section titles.
+            if adj_text.isupper() and len(adj_text.split()) <= 3:
+                continue
+
+            # Drop numeric-only spaCy DATE guesses to avoid masking benign counters/IDs.
+            if mapped_type == "DATE" and adj_text.isdigit():
+                continue
+
             span_len = len(adj_text)
             if span_len < self.MIN_SPAN_LEN or span_len > self.MAX_SPAN_LEN:
                 continue

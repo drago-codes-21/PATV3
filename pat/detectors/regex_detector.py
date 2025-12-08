@@ -211,4 +211,8 @@ class RegexDetector(BaseDetector):
             if float(pattern.confidence or 0) < 0.75:
                 return True
 
+        # Explicit guard for product identifiers that resemble card numbers.
+        if pattern.pii_type == "CARD_NUMBER" and ("product id" in neg_window or "product" in neg_window):
+            return True
+
         return False

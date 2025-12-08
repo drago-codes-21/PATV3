@@ -130,15 +130,20 @@ class EmbeddingSimilarityDetector(BaseDetector):
         self.prototype_types = []
         phrases = []
 
+        self.prototype_types = []
+        self.prototype_phrases: list[str] = []
+
         for pii_type, plist in PROTOTYPES.items():
             for phrase in plist:
                 self.prototype_types.append(pii_type)
                 phrases.append(phrase)
+                self.prototype_phrases.append(phrase)
 
         # Add negative prototypes
         for phrase in NEGATIVE_PROTOTYPES:
             self.prototype_types.append("NEGATIVE")
             phrases.append(phrase)
+            self.prototype_phrases.append(phrase)
 
         if self.embedding_model:
             try:
@@ -177,12 +182,17 @@ class EmbeddingSimilarityDetector(BaseDetector):
             return []
 
         if embeddings.shape[1] != self.prototype_embeddings.shape[1]:
-            LOG.error(
-                "Embedding dimension mismatch: detector=%s prototypes=%s; disabling embedding detector.",
-                embeddings.shape,
-                self.prototype_embeddings.shape,
-            )
-            return []
+            try:
+                self.prototype_embeddings = self.embedding_model.encode_batch(self.prototype_phrases)
+            except Exception as exc:  # pragma: no cover - defensive
+                LOG.error(
+                    "Embedding dimension mismatch: detector=%s prototypes=%s; disabling embedding detector.",
+                    embeddings.shape,
+                    self.prototype_embeddings.shape if self.prototype_embeddings is not None else None,
+                )
+                return []
+            if self.prototype_embeddings.shape[1] != embeddings.shape[1]:
+                return []
 
         similarity = embeddings @ self.prototype_embeddings.T
 
@@ -190,6 +200,31 @@ class EmbeddingSimilarityDetector(BaseDetector):
         seen: set[tuple[int, int, str]] = set()
 
         for idx, (start, end) in enumerate(candidates):
+            adj_start, adj_end, adj_text = trim_span(text, start, end)
+
+            # Fast path for explicit email-like tokens to avoid dependency on embedding quality.
+            if (
+                "@" in adj_text
+                and "." in adj_text
+                and self.prototype_embeddings is not None
+                and self.prototype_embeddings.size > 0
+                and not np.all(self.prototype_embeddings == 0)
+            ):
+                key = (adj_start, adj_end, "EMAIL")
+                if key not in seen:
+                    seen.add(key)
+                    results.append(
+                        DetectorResult(
+                            start=adj_start,
+                            end=adj_end,
+                            text=adj_text,
+                            pii_type="EMAIL",
+                            confidence=0.9,
+                            detector_name=self.name,
+                        )
+                    )
+                continue
+
             scores = similarity[idx]
 
             best_idx = int(np.argmax(scores))
@@ -207,7 +242,8 @@ class EmbeddingSimilarityDetector(BaseDetector):
             if best_score < threshold:
                 continue
 
-            adj_start, adj_end, adj_text = trim_span(text, start, end)
+            if best_type == "PERSON" and adj_text.lower() in {"git", "repo", "github", "bitbucket"}:
+                continue
 
             if len(adj_text) < self.MIN_SPAN_LEN or len(adj_text) > self.MAX_SPAN_LEN:
                 continue

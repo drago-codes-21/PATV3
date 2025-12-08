@@ -182,6 +182,16 @@ class DomainHeuristicsDetector(BaseDetector):
 
         return results
 
+    def _is_heading_like(self, snippet: str) -> bool:
+        """Heuristic to skip all-caps headings to reduce false positives on titles."""
+        letters = [c for c in snippet if c.isalpha()]
+        if not letters:
+            return False
+        upper = sum(1 for c in letters if c.isupper())
+        ratio = upper / max(1, len(letters))
+        word_count = len(snippet.strip().split())
+        return ratio >= 0.7 and word_count <= 8
+
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
@@ -198,6 +208,9 @@ class DomainHeuristicsDetector(BaseDetector):
     ) -> None:
         """Collect numeric spans within a keyword-scoped window."""
         assert rule.number_pattern is not None
+
+        if self._is_heading_like(window_text):
+            return
 
         for num_match in rule.number_pattern.finditer(window_text):
             span_start = window_start + num_match.start()
@@ -238,7 +251,13 @@ class DomainHeuristicsDetector(BaseDetector):
         kw_end = kw_match.end()
 
         raw_end = min(text_len, kw_end + rule.right_context)
+        para_break = text.find("\n\n", kw_end, raw_end)
+        if para_break != -1:
+            raw_end = para_break
         span_start, span_end, span_text = trim_span(text, kw_start, raw_end)
+
+        if self._is_heading_like(span_text):
+            return
 
         if len(span_text) < self.MIN_SPAN_LEN or len(span_text) > self.MAX_SPAN_LEN:
             return

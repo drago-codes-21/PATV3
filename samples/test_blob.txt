@@ -1,0 +1,160 @@
+﻿Subject: Re: Urgent – Payroll & Customer Data Cleanup Before Audit
+
+Hi team,
+
+Before the external audit next week, we need to clean up a bunch of legacy records that still contain raw PII. Below are some notes copied from different systems so we don’t lose track. Once PAT is stable, this entire blob should come back sanitized but still readable enough for humans.
+
+---
+
+[EMAIL THREAD – CUSTOMER SUPPORT]
+
+From: Sarah Collins <sarah.collins@example.com>
+To: refunds@ourshop.co.uk
+Date: 2024-09-18
+
+Hi,
+
+Please issue the refund of £129.49 to my card ending 2231. The full card number you have on file is 4485 9932 1184 2231 with expiry 08/27 and CVV 553. I’ve moved recently, so my new address is:
+
+27 Willow Rise,
+Flat 3B,
+Manchester M14 6PQ,
+United Kingdom.
+
+My old email (which is no longer valid) was sarah.c79@oldmail.com and my phone is now +44 7700 900321.
+
+Thanks,
+Sarah
+
+---
+
+[INTERNAL CRM EXPORT – DO NOT EMAIL EXTERNALLY]
+
+Customer: “Michael J. Turner”
+Internal Customer ID: CUST-00492817
+Legacy numeric customer id: 83920177
+
+Billing Address:
+18 Maple Street,
+Birmingham B1 1BB,
+UK
+
+Billing Email: michael.turner.personal@gmail.com
+Work Email: michael.turner@acme-fintech.com
+Mobile: +44 (0)7700 911223
+Desk Phone: +44 20 7946 0011
+
+Banking details on record:
+Sort code: 11-22-33
+Account number: 00456789
+IBAN: GB33BUKB20201555555555
+
+National Insurance number: QQ 12 34 56 C
+
+Notes:
+- Customer complained that CSV export still contains plain-text IBAN and NI number.
+- Old card on file: 5199 2222 3333 4444, exp 01/26.
+- New card on file (do not log in plaintext!): 4111 3333 5555 7777, exp 12/28.
+
+---
+
+[IT SERVICE DESK – SECURITY INCIDENT]
+
+Ticket: SEC-2024-1107
+Created by: “Rohan Patel” <rohan.patel@ourshop.co.uk>
+
+Description:
+During debugging, a junior dev accidentally committed a config file with credentials into the repo.
+
+The following secrets have already been rotated but are still present in the git history and in some log files:
+
+- Postgres connection string:
+  postgres://pii_admin:Sup3rS3cretP@localhost:5432/pii_prod
+- Legacy admin password hard-coded in a test:
+  ADMIN_PASSWORD="Welcome123!"
+- Temporary test password:
+  temp_password = "Password@123"
+- Internal API key used for staging:
+  PII_API_KEY = "sk_test_9a8b7c6d5e4f3g2h1x0y"
+- Old JWT signing secret:
+  jwt_secret = "super-long-secret-key-used-only-for-dev"
+
+There is also a user-facing log entry that accidentally captured a customer’s NHS number and date of birth:
+
+2024-09-11 09:21:33Z | user_id=83920177 | route=/verify-nhs |
+payload={"name": "Emily Johnson", "nhs_number":"987 654 3210", "dob":"1991-02-14"}
+
+---
+
+[HR PAYROLL SPREADSHEET SNIPPET – PASTED INTO EMAIL]
+
+Employee: “Emily Johnson”
+Employee ID: EMP-00127
+Role: Senior Data Scientist
+Personal Email: emj91@hotmail.com
+Work Email: emily.johnson@ourshop.co.uk
+Home Address: 41 Alder Grove, Bristol BS1 4AQ
+Emergency Contact Phone: +44 7700 812345
+
+Payroll details:
+- Bank: “Barclays”
+- Sort code: 20-12-55
+- Account: 00665544
+- Backup account (deprecated): 99887766, sort code 00-11-22
+
+Government IDs (stored incorrectly in HR notes):
+- Passport number: 552993847
+- Driving licence: PATEL912345RJ9AB
+- NI: QQ 98 76 54 A
+
+Health-related notes (should be HIGH/VERY_HIGH severity):
+- Employee disclosed chronic asthma and mild depression during occupational health check.
+- HR note from 2023-03-10: “Emily requested adjustment for anxiety; prefers remote work on Wednesdays.”
+
+---
+
+[APP TELEMETRY LOG – MIXED PII AND NON-PII]
+
+2024-09-10T10:02:11Z INFO CheckoutCompleted
+user_email="guest_4321@example.com"
+billing_postcode="SW1A 1AA"
+shipping_postcode="SW1A 2AB"
+order_id="ORD-20240910-000142"
+basket_items=3
+total_gbp=89.99
+card_last4="2231"
+
+2024-09-10T10:02:12Z DEBUG RawCardInput
+raw_card="4485-9932-1184-2231"
+ip_address="81.2.69.142"
+user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+Note: IP address should ideally be handled, but lower severity than card number.
+
+---
+
+[SUPPORT CHAT TRANSCRIPT – FREE TEXT]
+
+Agent (Priya): “Hi Michael, could you confirm the last 4 digits of your card and your date of birth?”
+Customer (Michael): “Sure, card ends with 7777 and my DOB is 14/05/1985.”
+Agent: “Thanks. I also see your backup phone as +44 7700 900654 and address 22 Kingfisher Court, Leeds LS1 2AB. Is that still correct?”
+Customer: “Yes, that’s correct. Please don’t send anything to my old email: m.turner+spam@oldmail.com.”
+
+---
+
+[DEVELOPER TODO – MIGRATION TO PAT]
+
+TODO (from Confluence notes):
+
+1. Run PAT on historical email exports (approx. 2.3M rows).
+2. Ensure high-risk PII (card numbers, bank accounts, NI, NHS, credentials, API keys) is fully masked or blocked.
+3. Avoid over-masking non-PII like:
+   - order_id: ORD-20240910-000142
+   - generic counters like “user_123”, “bucket_456”
+   - non-sensitive numeric codes like product SKU “SKU-998877”.
+
+4. Keep text readable for humans after sanitization; for instance, “Emily requested adjustment for anxiety” may become “<PERSON> requested adjustment for <HEALTH_CONDITION>” depending on policy.
+
+---
+
+End of test blob. If you’re reading this in raw form in production logs after PAT is enabled, something has gone wrong.
